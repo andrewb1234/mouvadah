@@ -53,6 +53,7 @@ The legacy `TASKABLE_API_URL`, `TASKABLE_API_KEY`, and
 | `update_ticket_status`      | `PATCH /tickets/{id}` (`status`, `assignee=AGENT`) |
 | `link_mr`                   | `POST /tickets/{id}/mr`                            |
 | `leave_comment`             | `POST /tickets/{id}/comments` (`author=AGENT`)     |
+| `read_comments`             | `GET /tickets/{id}/comments`                       |
 | `delete_project`            | `DELETE /projects/{id}`                            |
 | `delete_subproject`         | `DELETE /subprojects/{id}`                         |
 | `delete_ticket`             | `DELETE /tickets/{id}`                             |

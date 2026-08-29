@@ -283,6 +283,7 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             "get_all_projects",
             "get_active_tasks",
             "read_subproject_context",
+            "read_comments",
             # Create
             "create_project",
             "create_subproject",
@@ -329,6 +330,19 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
         )
         comment_result = (await client.recv())["result"]["content"][0]["text"]
         assert comment_result.startswith("Posted comment")
+
+        # tools/call -> read_comments
+        await client.send(
+            "tools/call",
+            {
+                "name": "read_comments",
+                "arguments": {"ticket_id": ticket["id"]},
+            },
+        )
+        comments_result = (await client.recv())["result"]["content"][0]["text"]
+        assert f"# Comments for ticket #{ticket['id']}" in comments_result
+        assert "— AGENT —" in comments_result
+        assert "Picking this up now." in comments_result
 
         # tools/call -> link_mr
         await client.send(

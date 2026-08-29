@@ -55,21 +55,26 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
      `context_brief` and every non-DONE ticket (status / assignee / MR link).
      **Call this first** to orient before touching any tickets.
 
+4. **`read_comments(ticket_id: int) -> str`**
+   * **Action:** `GET /api/v1/tickets/{ticket_id}/comments`
+   * **Return:** Chronologically ordered comments for one ticket, including
+     each comment's ID, author, timestamp, and content.
+
 ### Create tools
 
-4. **`create_project(name: str, description: str) -> str`**
+5. **`create_project(name: str, description: str) -> str`**
    * **Action:** `POST /api/v1/projects`
    * **Payload:** `{"name": name, "description": description}`
    * **Return:** Confirmation with the new project's ID, formatted so
      subsequent `create_subproject` calls can extract it.
 
-5. **`create_subproject(project_id: int, name: str, context_brief: str) -> str`**
+6. **`create_subproject(project_id: int, name: str, context_brief: str) -> str`**
    * **Action:** `POST /api/v1/projects/{project_id}/subprojects`
    * **Payload:** `{"name": name, "context_brief": context_brief}`
    * **Return:** Confirmation with the new subproject's ID and parent project.
      Returns an explicit `ERROR` if the project does not exist.
 
-6. **`create_ticket(subproject_id: int, title: str, description: str, assignee: str) -> str`**
+7. **`create_ticket(subproject_id: int, title: str, description: str, assignee: str) -> str`**
    * **Action:** `POST /api/v1/subprojects/{subproject_id}/tickets`
    * **Payload:** `{"title": title, "description": description, "assignee": assignee}`
    * **Constraint:** `assignee` must be `HUMAN`, `AGENT`, or `UNASSIGNED`
@@ -80,20 +85,20 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
 
 ### Mutate tools
 
-7. **`update_ticket_status(ticket_id: int, status: str) -> str`**
+8. **`update_ticket_status(ticket_id: int, status: str) -> str`**
    * **Action:** `PATCH /api/v1/tickets/{ticket_id}`
    * **Payload:** `{"status": status, "assignee": "AGENT"}` (the agent always
      claims the ticket on status change — matches PRD expectations).
    * **Constraint:** `status` must be one of `TODO`, `IN_PROGRESS`, `BLOCKED`,
      `REVIEW`, `DONE`.
 
-8. **`link_mr(ticket_id: int, url: str) -> str`**
+9. **`link_mr(ticket_id: int, url: str) -> str`**
    * **Action:** `POST /api/v1/tickets/{ticket_id}/mr`
    * **Payload:** `{"url": url}`
    * **Side effects:** Writes an `AuditLog` entry with `action=MR_LINKED`;
      broadcasts an SSE event so the UI refreshes live.
 
-9. **`leave_comment(ticket_id: int, content: str) -> str`**
+10. **`leave_comment(ticket_id: int, content: str) -> str`**
    * **Action:** `POST /api/v1/tickets/{ticket_id}/comments`
    * **Payload:** `{"author": "AGENT", "content": content}`
 
@@ -104,53 +109,53 @@ Delete tools are hidden by default. They are registered only when
 separate `delete` scope. Supporting clients receive destructive-operation
 annotations and should require confirmation.
 
-10. **`delete_project(project_id: int) -> str`**
+11. **`delete_project(project_id: int) -> str`**
     * **Action:** `DELETE /api/v1/projects/{project_id}`
     * **Side effects:** Cascades every subproject, ticket, comment, audit log,
       and knowledge node under the project. Broadcasts `PROJECT_DELETED`.
 
-11. **`delete_subproject(subproject_id: int) -> str`**
+12. **`delete_subproject(subproject_id: int) -> str`**
     * **Action:** `DELETE /api/v1/subprojects/{subproject_id}`
     * **Side effects:** Cascades tickets, comments, and audit logs under the
       subproject. Broadcasts `SUBPROJECT_DELETED`.
 
-12. **`delete_ticket(ticket_id: int) -> str`**
+13. **`delete_ticket(ticket_id: int) -> str`**
     * **Action:** `DELETE /api/v1/tickets/{ticket_id}`
     * **Side effects:** Cascades comments and audit logs under the ticket.
       Broadcasts `TICKET_DELETED`.
 
 ### Knowledge tree tools
 
-13. **`list_knowledge_nodes(project_id: int) -> str`**
+14. **`list_knowledge_nodes(project_id: int) -> str`**
     * **Action:** `GET /api/v1/agent/projects/{project_id}/knowledge`
     * **Return:** Compact hierarchical outline of every RAW / SUMMARY / PRD /
       TDD node in a project, including source references.
 
-14. **`read_knowledge_node(node_id: int) -> str`**
+15. **`read_knowledge_node(node_id: int) -> str`**
     * **Action:** `GET /api/v1/agent/knowledge/{node_id}`
     * **Return:** Single node detail with title, type, source references, and
       content. Use after `list_knowledge_nodes` to drill into relevant context.
 
-15. **`find_context_trail(project_id: int, query: str, limit?: int) -> str`**
+16. **`find_context_trail(project_id: int, query: str, limit?: int) -> str`**
     * **Action:** `GET /api/v1/agent/projects/{project_id}/context-trail?query=...`
     * **Return:** Markdown load order and matched branches for a task-intent
       query such as `battle component`. Use this when a fresh agent window
       needs scoped memory without loading the whole tree.
 
-16. **`create_knowledge_node(project_id, title, node_type, content, parent_id?, source_refs?) -> str`**
+17. **`create_knowledge_node(project_id, title, node_type, content, parent_id?, source_refs?) -> str`**
     * **Action:** `POST /api/v1/projects/{project_id}/knowledge`
     * **Payload:** `title`, `node_type` (`RAW`, `SUMMARY`, `PRD`, `TDD`),
       optional `content`, optional `parent_id`, and optional `source_refs`.
     * **Side effects:** Tags `created_by` from the bearer header and broadcasts
       `KNOWLEDGE_NODE_CREATED`.
 
-17. **`update_knowledge_node(node_id, title?, node_type?, content?, parent_id?, source_refs?) -> str`**
+18. **`update_knowledge_node(node_id, title?, node_type?, content?, parent_id?, source_refs?) -> str`**
     * **Action:** `PATCH /api/v1/knowledge/{node_id}`
     * **Payload:** Sparse update. Parent changes are rejected if they cross
       projects or create a cycle.
     * **Side effects:** Broadcasts `KNOWLEDGE_NODE_UPDATED`.
 
-18. **`delete_knowledge_node(node_id: int) -> str`**
+19. **`delete_knowledge_node(node_id: int) -> str`**
     * **Action:** `DELETE /api/v1/knowledge/{node_id}`
     * **Side effects:** Cascades descendant knowledge nodes and broadcasts
       `KNOWLEDGE_NODE_DELETED`.
