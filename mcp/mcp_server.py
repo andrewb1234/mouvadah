@@ -14,27 +14,28 @@ Tools — kept in lock-step with ``docs/mcp.md``:
         1. ``get_all_projects()``
         2. ``get_active_tasks(project_id)``
         3. ``read_subproject_context(subproject_id)``
+        4. ``read_comments(ticket_id)``
     Create:
-        4. ``create_project(name, description)``
-        5. ``create_subproject(project_id, name, context_brief)``
-        6. ``create_ticket(subproject_id, title, description, assignee)``
+        5. ``create_project(name, description)``
+        6. ``create_subproject(project_id, name, context_brief)``
+        7. ``create_ticket(subproject_id, title, description, assignee)``
     Mutate:
-        7. ``update_ticket_status(ticket_id, status)``
-        8. ``link_mr(ticket_id, url)``
-        9. ``leave_comment(ticket_id, content)``
+        8. ``update_ticket_status(ticket_id, status)``
+        9. ``link_mr(ticket_id, url)``
+        10. ``leave_comment(ticket_id, content)``
     Delete (cascading):
-        10. ``delete_project(project_id)``
-        11. ``delete_subproject(subproject_id)``
-        12. ``delete_ticket(ticket_id)``
+        11. ``delete_project(project_id)``
+        12. ``delete_subproject(subproject_id)``
+        13. ``delete_ticket(ticket_id)``
     Knowledge tree (PRD / TDD synthesis upstream of tickets):
-        13. ``list_knowledge_nodes(project_id)``
-        14. ``read_knowledge_node(node_id)``
-        15. ``find_context_trail(project_id, query, limit?)``
-        16. ``create_knowledge_node(project_id, title, node_type, content,
+        14. ``list_knowledge_nodes(project_id)``
+        15. ``read_knowledge_node(node_id)``
+        16. ``find_context_trail(project_id, query, limit?)``
+        17. ``create_knowledge_node(project_id, title, node_type, content,
                                     parent_id?, source_refs?)``
-        17. ``update_knowledge_node(node_id, title?, node_type?, content?,
+        18. ``update_knowledge_node(node_id, title?, node_type?, content?,
                                     parent_id?, source_refs?)``
-        18. ``delete_knowledge_node(node_id)``
+        19. ``delete_knowledge_node(node_id)``
 
 Docstrings are intentionally verbose so LLM clients have precise schemas and
 behavioral expectations without having to re-read the spec.
@@ -564,6 +565,36 @@ async def leave_comment(ticket_id: int, content: str) -> str:
     return f"Posted comment #{comment['id']} on ticket #{comment['ticket_id']}."
 
 
+async def read_comments(ticket_id: int) -> str:
+    """Read the chronologically ordered comment thread for one ticket."""
+    response = await _request("GET", f"/tickets/{int(ticket_id)}/comments")
+    if response.status_code == 404:
+        return f"ERROR: ticket {ticket_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: comment read failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+
+    comments = response.json()
+    if not comments:
+        return f"No comments exist on ticket #{ticket_id}."
+
+    lines = [f"# Comments for ticket #{ticket_id}"]
+    for comment in comments:
+        lines.extend(
+            [
+                "",
+                (
+                    f"## Comment #{comment['id']} — {comment['author']} — "
+                    f"{comment['timestamp']}"
+                ),
+                comment["content"],
+            ]
+        )
+    return "\n".join(lines)
+
+
 # ---- Knowledge tree tools -------------------------------------------------
 #
 # The knowledge tree lives upstream of subprojects and tickets. Typical agent
@@ -1004,6 +1035,23 @@ SAFE_TOOLS: list[Tool] = [
             "required": ["ticket_id", "content"],
         },
     ),
+    Tool(
+        name="read_comments",
+        description=(
+            "Read the chronologically ordered comments for one ticket, including "
+            "comment IDs, authors, timestamps, and content."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "ticket_id": {
+                    "type": "integer",
+                    "description": "ID of the ticket whose comments to read.",
+                },
+            },
+            "required": ["ticket_id"],
+        },
+    ),
 ]
 
 DESTRUCTIVE_TOOLS: list[Tool] = [
@@ -1246,6 +1294,7 @@ SAFE_TOOL_DISPATCH = {
     "heartbeat_ticket": heartbeat_ticket,
     "requeue_expired": requeue_expired,
     "leave_comment": leave_comment,
+    "read_comments": read_comments,
     "list_knowledge_nodes": list_knowledge_nodes,
     "read_knowledge_node": read_knowledge_node,
     "find_context_trail": find_context_trail,
