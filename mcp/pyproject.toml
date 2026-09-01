@@ -28,7 +28,7 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Andrew Betbadal" }]
 keywords = ["mcp", "mouvadah", "agent", "harness", "stdio"]
 dependencies = [
-    "mcp>=1.1,<2",
+    "mcp>=1.1,<3",
     "httpx>=0.27,<0.29",
 ]
 
