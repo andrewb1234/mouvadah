@@ -70,6 +70,7 @@ def consent(client, registered, workspace_id, **kwargs):
         "form-action 'self' https://claude.ai"
         in response.headers["content-security-policy"]
     )
+    assert response.headers["referrer-policy"] == "same-origin"
     signed = html.unescape(
         re.search(r'name="consent" value="([^"]+)"', response.text)[1]
     )

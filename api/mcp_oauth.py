@@ -198,7 +198,7 @@ def page(title: str, body: str, callback_origin: str = ""):
 <style>body{{font:17px/1.6 system-ui,sans-serif;background:#f7f4ed;color:#272824;margin:0;padding:24px}}main{{max-width:560px;margin:8vh auto}}h1{{line-height:1.15}}label{{display:block;margin-top:20px}}select,button{{font:inherit;padding:12px;max-width:100%;border:1px solid #666;border-radius:4px}}select{{width:100%}}button{{margin:24px 8px 0 0;cursor:pointer}}button[value=allow]{{background:#272824;color:white}}code{{overflow-wrap:anywhere}}.muted{{color:#565952}}</style></head><body><main><p>MOUVADAH</p><h1>{html.escape(title)}</h1>{body}</main></body></html>""",
         headers={
             **TOKEN_HEADERS,
-            "Referrer-Policy": "no-referrer",
+            "Referrer-Policy": "same-origin",
             "Content-Security-Policy": policy,
         },
     )
