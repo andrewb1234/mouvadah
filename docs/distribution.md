@@ -20,6 +20,12 @@ otherwise. The contents of [`mcp/`](../mcp/) use the separate
 permissions, not rights to Mouvadah branding; see
 [`TRADEMARKS.md`](../TRADEMARKS.md).
 
+## Hosted use — no installation
+
+To use Claude on web or mobile, connect to `https://mouvadah.com/mcp` and
+sign in through OAuth. No package, API key, or local server is required.
+Follow the [hosted connector guide](../mcp/README.md#hosted-connector--claude-web-desktop-and-mobile).
+
 ## Install the packaged Community release
 
 The full application requires Docker with Compose v2:
@@ -34,7 +40,8 @@ The same `mouvadah` command is available as a checksummed asset on the
 It downloads a checksummed Compose manifest and versioned API/web images, binds
 both services to loopback, and preserves data on uninstall.
 
-The MCP bridge is published independently:
+Desktop clients that use stdio can install the MCP bridge independently.
+It requires an API key from the local or hosted server it connects to:
 
 ```bash
 pipx install mouvadah-mcp==0.1.1

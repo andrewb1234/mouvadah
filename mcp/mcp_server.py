@@ -44,6 +44,7 @@ behavioral expectations without having to re-read the spec.
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 import os
 import stat
 from pathlib import Path
@@ -112,7 +113,8 @@ def _load_api_key() -> str:
     return ""
 
 
-API_KEY = _load_api_key()
+API_KEY = ""  # Loaded only by the standalone entrypoint, never by the hosted server.
+request_client: ContextVar[httpx.AsyncClient | None] = ContextVar("mcp_request_client", default=None)
 DESTRUCTIVE_TOOLS_ENABLED = (
     os.getenv("MOUVADAH_ENABLE_DESTRUCTIVE_TOOLS", "").strip().lower()
     == "true"
@@ -151,6 +153,9 @@ def _wrap(text: str) -> list[TextContent]:
 
 
 async def _request(method: str, path: str, **kwargs: Any) -> httpx.Response:
+    hosted_client = request_client.get()
+    if hosted_client is not None:
+        return await hosted_client.request(method, path.lstrip("/"), **kwargs)
     async with httpx.AsyncClient(timeout=15.0) as client:
         return await client.request(
             method, f"{API_URL}{path}", headers=_headers(), **kwargs
@@ -1350,6 +1355,8 @@ async def amain() -> None:
 
 
 def main() -> None:
+    global API_KEY
+    API_KEY = _load_api_key()
     if not API_KEY:
         raise SystemExit(
             "MOUVADAH_API_KEY is missing. Run `python3 bootstrap.py`, set "

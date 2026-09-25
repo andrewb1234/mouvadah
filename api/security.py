@@ -114,7 +114,7 @@ class RequestBodyLimitMiddleware:
     ) -> None:
         if (
             scope["type"] != "http"
-            or not scope.get("path", "").startswith("/api/v1")
+            or not scope.get("path", "").startswith(("/api/v1", "/mcp", "/oauth/"))
         ):
             await self.app(scope, receive, send)
             return

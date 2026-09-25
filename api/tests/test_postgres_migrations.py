@@ -680,3 +680,35 @@ async def test_postgres_realtime_fans_out_across_process_boundaries(
     finally:
         await first.stop()
         await second.stop()
+
+
+def test_hosted_mcp_oauth_grants_and_refresh_race(postgres_engine, monkeypatch):
+    """Prove the OAuth flow and single-use refresh transaction on PostgreSQL."""
+    from fastapi.testclient import TestClient
+    from api import database, events
+    from api.main import app
+    from api.tests.test_hosted_mcp import ORIGIN, connect, rpc
+
+    upgrade_database(postgres_engine)
+    assert_schema_matches_metadata(postgres_engine)
+    monkeypatch.setenv("FRONTEND_URL", ORIGIN)
+    get_settings.cache_clear()
+    original_engine = database.engine
+    database._set_engine(postgres_engine)
+    events.reset_broadcaster()
+    try:
+        with Session(postgres_engine) as session:
+            user = User(google_id="postgres-mcp-user", email="pg-mcp@example.invalid", name="PG MCP")
+            session.add(user); session.commit(); session.refresh(user)
+        with TestClient(app) as client:
+            registered, tokens, _ = connect(client, postgres_engine, user)
+            assert rpc(client, tokens["access_token"], "tools/list").status_code == 200
+            form = {"grant_type": "refresh_token", "client_id": registered["client_id"],
+                    "refresh_token": tokens["refresh_token"], "resource": ORIGIN + "/mcp"}
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                responses = list(pool.map(lambda _: client.post("/oauth/token", data=form), range(2)))
+            assert sorted(r.status_code for r in responses) == [200, 400]
+            issued = next(r.json() for r in responses if r.status_code == 200)
+            assert rpc(client, issued["access_token"], "tools/list").status_code == 401
+    finally:
+        database._set_engine(original_engine)

@@ -2,8 +2,8 @@
 
 Mouvadah gives a software team and its agents one durable place for project
 knowledge, dependency-aware work, claims, handoffs, and review. Humans use the
-web interface; agents use the same state through a local
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) bridge.
+web interface; agents use the same state through the hosted
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) connector or a local MCP bridge.
 
 **Current status:** Mouvadah is an alpha. You can evaluate the hosted
 application at [mouvadah.com](https://mouvadah.com), install Mouvadah Community
@@ -18,7 +18,33 @@ production availability, recovery, security-assessment, or support guarantees.
 - Keeps human and agent activity in one reviewable workflow.
 - Connects local agent harnesses through a vendor-neutral MCP server.
 
-## Install without cloning
+## Connect Claude on web or mobile
+
+Use the hosted service without downloading or hosting Mouvadah:
+
+1. Sign in at [mouvadah.com](https://mouvadah.com). If you need a shared
+   workspace, accept its invitation first.
+2. In [Claude Settings → Connectors](https://claude.ai/settings/connectors),
+   add a custom connector named **Mouvadah** with URL
+   `https://mouvadah.com/mcp`. Leave advanced client ID/secret fields empty.
+3. Choose **Connect**, sign in to your Mouvadah account, select a workspace
+   and read-only or read/write access, and approve.
+4. In Claude mobile, use the same Claude account, enable Mouvadah in your
+   chat’s connectors/tools, and ask **“List my Mouvadah projects.”** If adding
+   custom connectors is unavailable in the app, complete steps 2–3 in a browser.
+
+No API key or local bridge is needed for this path. Organization policies may
+restrict custom connectors. Grants expire after 30 days; reconnect to renew.
+Revoke anytime in Mouvadah **Settings → API Keys**, where connections are named
+**MCP: …**. See [the connector guide](./mcp/README.md) for troubleshooting.
+
+## Run Mouvadah locally
+
+Choose this path to keep the application and database on your own computer.
+Use the local installation’s API key and API URL, not credentials from the
+hosted service. The desktop MCP bridge uses stdio; Claude mobile cannot launch it.
+
+### Install without cloning
 
 The packaged Community installation requires Docker with Compose v2. On macOS
 or Linux, install the release command with Homebrew:
@@ -42,14 +68,14 @@ The command downloads the checksummed Compose manifest, binds the UI and API
 to loopback, creates an authenticated local owner, and preserves its data when
 you run `mouvadah uninstall`.
 
-If you only need the agent bridge, install the independently licensed Python
-package:
+For a desktop client that needs a local stdio bridge, install the independently
+licensed Python package (this is separate from the hosted connector above):
 
 ```bash
 pipx install mouvadah-mcp==0.1.1
 ```
 
-## Develop from source
+### Develop from source
 
 The commands below are the recommended macOS/Linux development path.
 
@@ -178,7 +204,8 @@ references, and handoffs preserve how the result was reached.
 ```text
 React web UI ── REST + SSE ── FastAPI + SQLModel ── SQLite (local)
                                   │
-MCP client ── stdio bridge ── bearer-authenticated REST
+MCP client ── local stdio bridge ── bearer-authenticated REST
+Claude web/mobile ── /mcp + OAuth ── same workspace authorization
                                   │
                             PostgreSQL (hosted profile)
 ```

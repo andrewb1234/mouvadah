@@ -19,6 +19,9 @@ export default defineConfig({
     // Proxy REST + SSE to the local FastAPI process so the UI can use
     // relative URLs and avoid CORS friction during development.
     proxy: {
+      "/mcp": { target: apiProxyTarget, changeOrigin: false },
+      "/oauth": { target: apiProxyTarget, changeOrigin: false },
+      "/.well-known": { target: apiProxyTarget, changeOrigin: false },
       "/api/v1": {
         target: apiProxyTarget,
         changeOrigin: true,

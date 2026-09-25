@@ -24,6 +24,7 @@ RUN pip install --require-hashes -r api/requirements-runtime.txt
 
 # Copy the API package.
 COPY api ./api
+COPY mcp ./mcp
 COPY LICENSE /usr/share/licenses/mouvadah/LICENSE
 COPY NOTICE /usr/share/licenses/mouvadah/NOTICE
 COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/mouvadah/THIRD_PARTY_NOTICES.md
