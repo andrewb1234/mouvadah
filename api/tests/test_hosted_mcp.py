@@ -544,7 +544,18 @@ def test_oauth_login_return_is_restricted_and_consent_is_session_bound(
         params={"return_to": "/oauth/authorize?client_id=test"},
         follow_redirects=False,
     )
-    assert "/oauth/authorize" in c.cookies.get("mcp_return_to")
+    from api.routes.auth import _mcp_return_path
+
+    signed_return = c.cookies.get("mcp_return_to")
+    login_state = c.cookies.get("oauth_state")
+    assert (
+        _mcp_return_path(signed_return, login_state, get_settings())
+        == "/oauth/authorize?client_id=test"
+    )
+    assert _mcp_return_path(signed_return, "wrong-state", get_settings()) == ""
+    assert (
+        _mcp_return_path(signed_return + "tampered", login_state, get_settings()) == ""
+    )
     c.get(
         "/api/v1/auth/login",
         params={"return_to": "//evil.invalid/"},

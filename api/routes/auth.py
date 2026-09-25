@@ -14,10 +14,11 @@ Flow:
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import httpx
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, SecretStr
@@ -95,14 +96,32 @@ def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
     return kwargs
 
 
+def _mcp_return_path(token: str, state: str, settings: Settings) -> str:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=["HS256"],
+            audience="mcp-login-return",
+        )
+        path = payload.get("path", "")
+        if (
+            payload.get("state") == state
+            and isinstance(path, str)
+            and path.startswith("/oauth/authorize?")
+        ):
+            return path
+    except jwt.PyJWTError:
+        pass
+    return ""
+
+
 @router.get("/providers")
 async def auth_providers(settings: SettingsDep) -> AuthProviders:
     """Return the login methods that are safe and configured for this runtime."""
     return AuthProviders(
         google=bool(settings.google_client_id),
-        local_api_key=(
-            settings.local_auth_enabled and not settings.is_production()
-        ),
+        local_api_key=(settings.local_auth_enabled and not settings.is_production()),
     )
 
 
@@ -133,7 +152,7 @@ async def local_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired API key.",
             headers={"WWW-Authenticate": "Bearer"},
-    )
+        )
 
     ensure_personal_workspace(session, user)
     _, jwt_token = create_browser_session(
@@ -179,8 +198,26 @@ async def auth_login(
         state,
         **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
     )
-    if return_to and return_to.startswith("/oauth/authorize?") and len(return_to) <= 8192:
-        response.set_cookie("mcp_return_to", return_to, **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE))
+    if (
+        return_to
+        and return_to.startswith("/oauth/authorize?")
+        and len(return_to.encode()) <= 2048
+    ):
+        return_token = jwt.encode(
+            {
+                "aud": "mcp-login-return",
+                "path": return_to,
+                "state": state,
+                "exp": utcnow() + timedelta(seconds=STATE_COOKIE_MAX_AGE),
+            },
+            settings.jwt_secret,
+            algorithm="HS256",
+        )
+        response.set_cookie(
+            "mcp_return_to",
+            return_token,
+            **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
+        )
     else:
         response.delete_cookie("mcp_return_to", **_cookie_kwargs(settings))
     return response
@@ -259,13 +296,9 @@ async def auth_callback(
     avatar_url = profile.get("picture")
 
     # Upsert the user.
-    existing = session.exec(
-        select(User).where(User.google_id == google_id)
-    ).first()
+    existing = session.exec(select(User).where(User.google_id == google_id)).first()
     if existing is None:
-        local_user = session.exec(
-            select(User).where(User.email == email)
-        ).first()
+        local_user = session.exec(select(User).where(User.email == email)).first()
         if local_user is not None and local_user.google_id.startswith("local:"):
             local_user.google_id = google_id
             existing = local_user
@@ -296,7 +329,9 @@ async def auth_callback(
         user=user,
         secret=settings.jwt_secret,
     )
-    return_to = request.cookies.get("mcp_return_to", "")
+    return_to = _mcp_return_path(
+        request.cookies.get("mcp_return_to", ""), state, settings
+    )
     destination = (
         settings.public_origin() + return_to
         if return_to.startswith("/oauth/authorize?")
