@@ -1,12 +1,6 @@
 import { useState } from "react";
-import { Check, Copy, Terminal, X } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Check, Copy, Terminal } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -14,49 +8,36 @@ interface McpSetupModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   apiKey: string | null;
+  initialMode?: "hosted" | "local";
 }
 
-type Provider = "claude" | "windsurf" | "cursor" | "vscode";
-
-const PROVIDERS: { id: Provider; label: string; file: string }[] = [
+const HOSTED_MCP_URL = "https://mouvadah.com/mcp";
+const PROVIDERS = [
   { id: "claude", label: "Claude Desktop", file: "~/Library/Application Support/Claude/claude_desktop_config.json" },
   { id: "windsurf", label: "Windsurf", file: "~/.codeium/windsurf/mcp_config.json" },
   { id: "cursor", label: "Cursor", file: "~/.cursor/mcp.json" },
-  { id: "vscode", label: "VS Code", file: "Settings → MCP" },
-];
+  { id: "vscode", label: "VS Code", file: "User mcp.json (MCP: Open User Configuration)" },
+] as const;
 
-function buildConfig(apiKey: string, apiUrl: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        mouvadah: {
-          command: "mouvadah-mcp",
-          args: [],
-          env: {
-            MOUVADAH_API_URL: apiUrl,
-            MOUVADAH_API_KEY: apiKey,
-          },
-        },
-      },
-    },
-    null,
-    2,
-  );
-}
-
-export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps) {
-  const [provider, setProvider] = useState<Provider>("claude");
+export function McpSetupModal({ open, onOpenChange, apiKey, initialMode = "hosted" }: McpSetupModalProps) {
+  const [mode, setMode] = useState<"hosted" | "local">(initialMode);
+  const [provider, setProvider] = useState<string>("claude");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
-
   const apiUrl = `${window.location.origin}/api/v1`;
-  const config = apiKey
-    ? buildConfig(apiKey, apiUrl)
-    : 'Create an API key first, then paste it here.';
+  const entry = {
+    command: "mouvadah-mcp",
+    args: [],
+    env: { MOUVADAH_API_URL: apiUrl, MOUVADAH_API_KEY: apiKey ?? "YOUR_API_KEY" },
+  };
+  const config = JSON.stringify(provider === "vscode"
+    ? { servers: { mouvadah: { type: "stdio", ...entry } } }
+    : { mcpServers: { mouvadah: entry } }, null, 2);
+  const activeProvider = PROVIDERS.find((p) => p.id === provider)!;
 
-  async function copyConfig() {
+  async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(config);
+      await navigator.clipboard.writeText(text);
       setCopyError(false);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -66,115 +47,56 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
     }
   }
 
-  const activeProvider = PROVIDERS.find((p) => p.id === provider)!;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-y-auto rounded-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Terminal className="h-5 w-5" />
-            Configure an MCP client
-          </DialogTitle>
-          <DialogDescription>
-            Add Mouvadah to a supported coding assistant using the newly
-            created, scoped API key. The secret is included in the generated
-            configuration and should be handled as a credential.
-          </DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Terminal className="h-5 w-5" />Connect an AI assistant</DialogTitle>
+          <DialogDescription>Use the hosted connector from Claude on web or mobile, or install a local MCP bridge for a desktop client.</DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-4 px-6 pb-6">
-          {/* Provider tabs */}
-          <div className="flex flex-wrap gap-2">
-            {PROVIDERS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setProvider(p.id)}
-                aria-pressed={provider === p.id}
-                className={cn(
-                  "focus-ring min-h-10 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors",
-                  provider === p.id
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent",
-                )}
-              >
-                {p.label}
-              </button>
+        <div className="space-y-5 px-6 pb-6">
+          <div className="flex flex-wrap gap-2" aria-label="Connection method">
+            {([['hosted', 'Hosted connector'], ['local', 'Local MCP bridge']] as const).map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={mode === id}
+                onClick={() => { setMode(id); setCopied(false); setCopyError(false); }}
+                className={cn("focus-ring min-h-10 rounded-sm px-3 py-2 text-sm font-medium", mode === id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{label}</button>
             ))}
           </div>
-
-          {/* Config location */}
-          <div className="rounded-md border border-border bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-semibold">Config location:</span>{" "}
-              <code className="text-foreground">{activeProvider.file}</code>
-            </p>
-          </div>
-
-          {/* JSON config */}
-          <div className="relative">
-            <pre className="max-h-64 overflow-auto rounded-md border border-border bg-muted/50 p-4 text-xs">
-              <code>{config}</code>
-            </pre>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-2 top-2 h-7 w-7"
-              onClick={() => void copyConfig()}
-              disabled={!apiKey}
-              aria-label={copied ? "MCP configuration copied" : "Copy MCP configuration"}
-            >
-              {copied ? (
-                <Check className="h-3.5 w-3.5 text-status-done-foreground" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </Button>
-          </div>
-
-          {copyError && (
-            <p
-              role="alert"
-              className="text-xs text-destructive"
-            >
-              Clipboard access was denied. Select the configuration text and
-              copy it manually.
-            </p>
-          )}
-
-          {/* Warning */}
-          {!apiKey && (
-            <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-3">
-              <X className="mt-0.5 h-4 w-4 shrink-0 text-status-review-foreground" />
-              <p className="text-xs text-muted-foreground">
-                You need to create an API key first. Close this dialog, generate
-                a key, then reopen this dialog to get the full config.
-              </p>
+          {mode === "hosted" ? (
+            <div className="space-y-4 text-sm">
+              <h3 className="font-semibold">Claude on web, desktop, and mobile</h3>
+              <p className="text-muted-foreground">No download, local server, or API key is needed. Sign in to Mouvadah when Claude asks you to connect.</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-border bg-muted/50 p-3">
+                <code className="break-all">{HOSTED_MCP_URL}</code>
+                <Button variant="outline" size="sm" onClick={() => void copy(HOSTED_MCP_URL)}>{copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}{copied ? "Copied" : "Copy connector URL"}</Button>
+              </div>
+              <ol className="ml-5 list-decimal space-y-3 text-muted-foreground">
+                <li>Open <a className="underline" href="https://claude.ai/settings/connectors" target="_blank" rel="noreferrer">Claude Settings → Connectors</a> in a browser and choose <strong>Add custom connector</strong>. If your mobile app offers this option, you can start there too.</li>
+                <li>Name it Mouvadah and paste the connector URL above. Leave advanced client ID and client secret fields empty.</li>
+                <li>Choose <strong>Connect</strong>, sign in to your own Mouvadah account, select the workspace and access level, then allow the connection.</li>
+                <li>Open the Claude mobile app with the same Claude account. Enable Mouvadah in your chat’s connectors/tools and ask: “List my Mouvadah projects.”</li>
+              </ol>
+              <p className="text-xs text-muted-foreground">To use a shared workspace, accept its invitation in Mouvadah before connecting. You can revoke a connection below under API Keys (named “MCP: …”). Reconnect after its 30-day authorization expires. Claude organization settings may restrict custom connectors.</p>
+            </div>
+          ) : (
+            <div className="space-y-4 text-sm">
+              <h3 className="font-semibold">Run the MCP bridge on your computer</h3>
+              <p className="text-muted-foreground">For desktop clients that launch a local process. The bridge connects to this Mouvadah server at <code className="break-all">{apiUrl}</code>. Create an API key on this server and install <code>pipx install mouvadah-mcp</code> or <code>uv tool install mouvadah-mcp</code>.</p>
+              <div className="flex flex-wrap gap-2">
+                {PROVIDERS.map((p) => <button key={p.id} type="button" aria-pressed={provider === p.id} onClick={() => { setProvider(p.id); setCopied(false); }} className={cn("focus-ring min-h-10 rounded-sm px-3 py-1.5 text-xs font-medium", provider === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{p.label}</button>)}
+              </div>
+              <p className="text-xs text-muted-foreground">Config location: <code className="break-all">{activeProvider.file}</code></p>
+              <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-muted/50 p-4 text-xs"><code>{config}</code></pre>
+              <Button variant="outline" size="sm" onClick={() => void copy(config)} disabled={!apiKey}>{copied ? "Configuration copied" : "Copy MCP configuration"}</Button>
+              {!apiKey && <p className="text-xs text-muted-foreground">Create an API key below, then choose “Configure local MCP with this key” to include it in the configuration.</p>}
+              <p className="text-xs text-muted-foreground">Save the configuration with owner-only permissions, restart {activeProvider.label}, and ask it to list your Mouvadah projects. This file contains a secret; revoke the key if it is exposed.</p>
+              <div className="border-t border-border pt-4">
+                <h4 className="font-semibold">Want to run all of Mouvadah locally?</h4>
+                <p className="mt-2 text-muted-foreground">Follow the <a className="underline" href="https://github.com/andrewb1234/mouvadah#run-mouvadah-locally">Community installation instructions</a>, then open Settings in your local app and use its API key and API URL. Hosted keys do not grant access to a separate local installation.</p>
+              </div>
             </div>
           )}
-
-          {apiKey && (
-            <div className="rounded-sm border border-brand-brass/40 bg-brand-brass/10 p-3 text-xs leading-relaxed text-muted-foreground">
-              Save configuration files with owner-only permissions, for example{" "}
-              <code>chmod 600 &lt;config-file&gt;</code>. Revoke the key from
-              Agent credentials if this configuration is exposed.
-            </div>
-          )}
-
-          {/* Steps */}
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground">
-              Setup steps:
-            </p>
-            <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
-              <li>Install the MCP server: <code className="text-foreground">pipx install taskable</code> or <code className="text-foreground">uv tool install taskable</code> <span className="text-muted-foreground/70">(package name is `taskable`)</span></li>
-              <li>Copy the JSON config above while the key is available</li>
-              <li>Paste it into the config file for {activeProvider.label}</li>
-              <li>Restart {activeProvider.label}</li>
-              <li>Your AI assistant can now use mouvadah tools</li>
-            </ol>
-          </div>
+          {copyError && <p role="alert" className="text-xs text-destructive">Clipboard access was denied. Select the text and copy it manually.</p>}
         </div>
       </DialogContent>
     </Dialog>

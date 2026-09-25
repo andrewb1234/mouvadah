@@ -13,7 +13,7 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, Column, Index, JSON, String, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
@@ -504,3 +504,35 @@ class KnowledgeProposal(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     node: Optional[KnowledgeNode] = Relationship(back_populates="proposals")
+
+
+class McpOAuthClient(SQLModel, table=True):
+    """Registered OAuth client metadata; client secrets are hashed."""
+    id: str = Field(primary_key=True)
+    secret_hash: Optional[str] = None
+    metadata_json: dict = Field(sa_column=Column(JSON, nullable=False))
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+
+class McpOAuthCode(SQLModel, table=True):
+    """Short-lived, single-use PKCE authorization code."""
+    code_hash: str = Field(primary_key=True)
+    client_id: str
+    api_key_id: int = Field(sa_column=Column(Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False))
+    redirect_uri: str
+    challenge: str
+    resource: str
+    expires_at: datetime
+    used: bool = False
+
+
+class McpOAuthToken(SQLModel, table=True):
+    """Hashed, audience-bound access/refresh tokens sharing a revocable grant."""
+    token_hash: str = Field(primary_key=True)
+    client_id: str
+    api_key_id: int = Field(sa_column=Column(Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False))
+    kind: str
+    resource: str
+    scopes: List[str] = Field(sa_column=Column(JSON, nullable=False))
+    expires_at: datetime
+    used: bool = False

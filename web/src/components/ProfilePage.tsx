@@ -95,6 +95,7 @@ export function ProfilePage({
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKeyCreated | null>(null);
   const [copied, setCopied] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpMode, setMcpMode] = useState<"hosted" | "local">("hosted");
   const [workspaceActionId, setWorkspaceActionId] = useState<number | null>(
     null,
   );
@@ -564,15 +565,15 @@ export function ProfilePage({
                   Agent credentials
                 </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Create scoped credentials, then configure an MCP client. New
-                  secrets are visible once and should be stored with owner-only
-                  file permissions.
+                  Connect Claude on web or mobile through the hosted connector—no
+                  installation or API key needed. For a local MCP bridge, create
+                  a scoped API key below. Revoke hosted connections here too.
                 </p>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setMcpOpen(true)}
+                onClick={() => { setMcpMode("hosted"); setMcpOpen(true); }}
                 className="self-start"
               >
                 <Terminal className="mr-1.5 h-3.5 w-3.5" />
@@ -783,11 +784,12 @@ export function ProfilePage({
                       size="sm"
                       className="mt-2"
                       onClick={() => {
+                        setMcpMode("local");
                         setMcpOpen(true);
                       }}
                     >
                       <Terminal className="mr-1.5 h-3.5 w-3.5" />
-                      Configure MCP with this key
+                      Configure local MCP with this key
                     </Button>
                     <button
                       className="ml-2 text-xs text-muted-foreground hover:text-foreground"
@@ -908,7 +910,7 @@ export function ProfilePage({
                   <div className="rounded-lg border border-dashed border-border p-8 text-center">
                     <KeyRound className="mx-auto h-8 w-8 text-muted-foreground/50" />
                     <p className="mt-2 text-sm text-muted-foreground">
-                      No API keys yet. Create one to let your AI agent access mouvadah.
+                      No API keys or hosted connections yet. Use the Setup Guide to connect Claude, or create a key for a local bridge.
                     </p>
                   </div>
                 )}
@@ -1129,6 +1131,8 @@ export function ProfilePage({
       </div>
 
       <McpSetupModal
+        key={`${mcpMode}-${mcpOpen}`}
+        initialMode={mcpMode}
         open={mcpOpen}
         onOpenChange={setMcpOpen}
         apiKey={newlyCreatedKey?.key ?? null}

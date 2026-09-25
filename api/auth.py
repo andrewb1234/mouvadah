@@ -108,6 +108,8 @@ def revoke_browser_session(session: Session, session_id: str) -> None:
 def _verify_api_key_record(
     raw_key: str,
     session: Session,
+    *,
+    internal_key_id: int | None = None,
 ) -> tuple[User, ApiKey, frozenset[int]] | None:
     """Resolve an active, workspace-bound key and its project allow-list.
 
@@ -115,9 +117,11 @@ def _verify_api_key_record(
     Updates ``last_used_at`` on successful verification.
     """
     key_hash = hash_api_key(raw_key)
-    api_key = session.exec(
-        select(ApiKey).where(ApiKey.key_hash == key_hash)
-    ).first()
+    api_key = (
+        session.get(ApiKey, internal_key_id)
+        if internal_key_id is not None
+        else session.exec(select(ApiKey).where(ApiKey.key_hash == key_hash)).first()
+    )
     if api_key is None or api_key.revoked or api_key.workspace_id is None:
         return None
     if api_key.expires_at is not None:
@@ -176,11 +180,15 @@ async def get_current_user(
     # This avoids privilege confusion when a signed-in browser intentionally
     # tests or uses a restricted integration key.
     authorization = request.headers.get("Authorization", "")
-    if authorization:
+    # Set only by the in-process hosted MCP adapter, never from HTTP headers.
+    internal_key_id = request.scope.get("mouvadah.mcp_key_id")
+    if authorization or internal_key_id is not None:
         bearer_token = parse_bearer_token(authorization)
         verified = (
-            _verify_api_key_record(bearer_token, session)
-            if bearer_token is not None
+            _verify_api_key_record(
+                bearer_token or "", session, internal_key_id=internal_key_id
+            )
+            if bearer_token is not None or internal_key_id is not None
             else None
         )
         if verified is not None:
@@ -192,6 +200,8 @@ async def get_current_user(
             else:
                 required_scope = WRITE_SCOPE
             scopes = frozenset(api_key.scopes)
+            if internal_key_id is not None:
+                scopes &= request.scope["mouvadah.mcp_scopes"]
             if required_scope not in scopes:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

@@ -1,12 +1,19 @@
 # Mouvadah MCP server
 
-Python-based Model Context Protocol (MCP) server that exposes the Mouvadah REST
-API to agentic IDEs (Windsurf, Claude Desktop, etc.) over a `stdio` transport.
+Mouvadah exposes the same tool catalogue through two transports:
+
+- **Hosted:** `https://mouvadah.com/mcp`, Streamable HTTP with OAuth account
+  linking, usable by Claude web/mobile without installation or API keys.
+- **Local:** the `mouvadah-mcp` stdio process with an API key for either a local
+  installation or the hosted REST API.
+
+See [the setup guide](../mcp/README.md) for user instructions and
+[hosted MCP operations](./hosted-mcp.md) for security and deployment details.
 
 > **Source of truth:** `mcp/mcp_server.py`. Every tool below is registered in
 > the `TOOLS` list and dispatched from `TOOL_DISPATCH`.
 
-## Dependencies
+## Local bridge dependencies
 * `mcp >=1.1` (Official Python SDK)
 * `httpx` (Async HTTP client for REST calls)
 
@@ -14,7 +21,7 @@ See `mcp/pyproject.toml` for the packaging manifest. Install via
 `pipx install mouvadah-mcp==0.1.1`, `uv tool install mouvadah-mcp==0.1.1`, or
 `pip install -e ./mcp` to get the `mouvadah-mcp` console script.
 
-## Configuration
+## Local bridge configuration
 * **API Target:** `MOUVADAH_API_URL` (default
   `http://localhost:8000/api/v1`).
   Trailing slashes are stripped at load time.

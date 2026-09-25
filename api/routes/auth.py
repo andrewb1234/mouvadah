@@ -151,7 +151,9 @@ async def local_session(
 
 
 @router.get("/login")
-async def auth_login(request: Request, settings: SettingsDep) -> RedirectResponse:
+async def auth_login(
+    request: Request, settings: SettingsDep, return_to: str | None = None
+) -> RedirectResponse:
     """Redirect the user to Google's OAuth consent screen."""
     if not settings.google_client_id:
         raise HTTPException(
@@ -177,6 +179,10 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         state,
         **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
     )
+    if return_to and return_to.startswith("/oauth/authorize?") and len(return_to) <= 8192:
+        response.set_cookie("mcp_return_to", return_to, **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE))
+    else:
+        response.delete_cookie("mcp_return_to", **_cookie_kwargs(settings))
     return response
 
 
@@ -290,8 +296,14 @@ async def auth_callback(
         user=user,
         secret=settings.jwt_secret,
     )
+    return_to = request.cookies.get("mcp_return_to", "")
+    destination = (
+        settings.public_origin() + return_to
+        if return_to.startswith("/oauth/authorize?")
+        else settings.frontend_url
+    )
     response = RedirectResponse(
-        url=settings.frontend_url,
+        url=destination,
         status_code=status.HTTP_302_FOUND,
     )
     response.set_cookie(
@@ -300,6 +312,7 @@ async def auth_callback(
         **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
     )
     response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings))
+    response.delete_cookie("mcp_return_to", **_cookie_kwargs(settings))
     return response
 
 

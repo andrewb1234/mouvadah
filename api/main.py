@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.responses import FileResponse, JSONResponse
 
-from api import database
+from api import database, hosted_mcp, mcp_oauth
 from api.auth import get_current_user
 from api.config import get_settings
 from api.database import init_db
@@ -67,7 +67,9 @@ async def lifespan(app: FastAPI):
         get_settings().effective_realtime_database_url()
     )
     try:
-        yield
+        app.state.mcp_manager = hosted_mcp.make_manager()
+        async with app.state.mcp_manager.run():
+            yield
     finally:
         await broadcaster.stop()
         flush_telemetry()
@@ -204,6 +206,9 @@ def create_app() -> FastAPI:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return metrics_response()
+
+    app.include_router(mcp_oauth.router)
+    hosted_mcp.install(app)
 
     # --- Serve built frontend (production) ---
     dist_dir = Path("web/dist")

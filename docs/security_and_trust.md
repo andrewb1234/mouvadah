@@ -417,8 +417,11 @@ Residual risk:
 
 ### Remote MCP
 
-Keep stdio credentials in the environment for the local product. For hosted
-Streamable HTTP:
+The hosted `/mcp` endpoint now implements Streamable HTTP with OAuth account
+linking, workspace consent, read-only access, rotating refresh tokens, and
+immediate grant revocation. See [hosted MCP operations](./hosted-mcp.md) for
+the implementation and verification boundary. The local stdio bridge remains
+available with API-key credentials. Ongoing requirements:
 
 - follow the current MCP authorization specification;
 - expose protected-resource metadata;
