@@ -108,6 +108,11 @@ class HostedMcp:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if not get_settings().hosted_mcp_enabled:
+            await JSONResponse({"error": "temporarily_unavailable"}, status_code=503)(
+                scope, receive, send
+            )
+            return
         request = Request(scope, receive)
         raw = parse_bearer_token(request.headers.get("authorization", ""))
         grant = resolve_access(raw) if raw else None

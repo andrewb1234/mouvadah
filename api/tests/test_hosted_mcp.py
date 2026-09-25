@@ -595,3 +595,16 @@ def test_mcp_rejects_untrusted_origin_and_host(enforce_auth_client, engine, test
         ).status_code
         == 403
     )
+
+
+def test_hosted_kill_switch_preserves_application(enforce_auth_client, monkeypatch):
+    monkeypatch.setenv("HOSTED_MCP_ENABLED", "false")
+    get_settings.cache_clear()
+    c = enforce_auth_client
+    assert c.post("/mcp").status_code == 503
+    assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 503
+    assert c.get("/.well-known/oauth-authorization-server").status_code == 503
+    assert (
+        c.post("/oauth/register", json={"redirect_uris": [CALLBACK]}).status_code == 503
+    )
+    assert c.get("/healthz").status_code == 200

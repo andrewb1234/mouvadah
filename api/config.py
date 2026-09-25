@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     local_auth_enabled: bool = False
+    hosted_mcp_enabled: bool = True
     jwt_secret: str = "dev-jwt-secret-change-me"
     frontend_url: str = "http://localhost:5173"
     auth_rate_limit: int = 10

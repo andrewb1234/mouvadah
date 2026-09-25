@@ -54,9 +54,17 @@ Existing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET`, and trusted
 
 The existing Google callback returns to the validated `/oauth/authorize` path
 when connecting MCP. Ordinary sign-in continues to return to the application.
-Rollback the application commit to remove the endpoint; the additive tables may
-remain. Revoke affected `MCP: …` keys before restoring a rolled-back release if
-connections must remain disabled. Follow existing database backup/restore policy.
+For an immediate operational rollback, set `HOSTED_MCP_ENABLED=false` and
+restart. This makes the hosted transport and all OAuth/discovery routes return
+503 while the web app, REST API, and local stdio integrations continue working.
+It preserves the migration and schema compatibility. Revoke affected `MCP: …`
+keys if they must stay disabled when service resumes.
+
+Do not deploy pre-0008 application code directly against the upgraded database:
+the existing migration gate rejects revision/schema mismatches. A full old-code
+rollback requires a verified backup and a coordinated downgrade of 0008 (which
+drops only OAuth tables and invalidates all hosted connections) before starting
+the older application. Prefer the kill switch or a forward fix.
 
 ## Verification
 

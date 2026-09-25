@@ -15,7 +15,7 @@ from datetime import timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import jwt
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import update
@@ -38,7 +38,13 @@ from api.models.entities import (
 from api.security import rate_limiter
 from api.utils.time import utcnow
 
-router = APIRouter()
+
+def require_hosted_mcp():
+    if not get_settings().hosted_mcp_enabled:
+        raise HTTPException(503, "Hosted MCP is temporarily unavailable.")
+
+
+router = APIRouter(dependencies=[Depends(require_hosted_mcp)])
 SCOPES = {"read", "write"}
 TOKEN_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
