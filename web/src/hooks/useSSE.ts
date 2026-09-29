@@ -8,7 +8,10 @@ import { apiBase } from "@/lib/api";
 import type { SSEPayload } from "@/types";
 
 function invalidateCachedReads(payload: SSEPayload): void {
-  if (payload.action === "SYNC_REQUIRED") {
+  if (
+    payload.action === "SYNC_REQUIRED" ||
+    payload.action === "PROJECT_ACCESS_CHANGED"
+  ) {
     clearAsyncCache();
     return;
   }
@@ -81,7 +84,22 @@ export function useSSE(onEvent: (payload: SSEPayload) => void): void {
       console.warn("SSE connection hiccup", event);
     };
 
+    const revalidate = () => {
+      if (document.visibilityState !== "visible") return;
+      clearAsyncCache();
+      handlerRef.current({
+        action: "SYNC_REQUIRED",
+        entity: "project",
+        entity_id: 0,
+        parent_id: null,
+        workspace_id: null,
+      });
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
     return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
       source.removeEventListener("ready", dispatch as EventListener);
       source.removeEventListener("resync", dispatch as EventListener);
       source.close();

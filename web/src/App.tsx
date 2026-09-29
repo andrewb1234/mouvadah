@@ -1,3 +1,4 @@
+import { ProjectInvitationPage } from "@/components/ProjectInvitationPage";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { LandingPage } from "@/components/marketing/LandingPage";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
@@ -20,6 +21,17 @@ const ProfilePage = lazy(() =>
   })),
 );
 
+const PROJECT_INVITATION_KEY = "mouvadah.pending-project-invitation";
+function readProjectInvitation() {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get(
+    "project_invite",
+  );
+  if (token) {
+    sessionStorage.setItem(PROJECT_INVITATION_KEY, token);
+    window.history.replaceState({}, "", `/app${window.location.search}`);
+  }
+  return token ?? sessionStorage.getItem(PROJECT_INVITATION_KEY);
+}
 const INVITATION_STORAGE_KEY = "mouvadah.pending-invitation";
 type AppPath = "/" | "/app";
 
@@ -61,10 +73,7 @@ function RouteLoading() {
             Checking the current browser session…
           </p>
         </div>
-        <div
-          className="h-px w-40 overflow-hidden bg-border"
-          aria-hidden="true"
-        >
+        <div className="h-px w-40 overflow-hidden bg-border" aria-hidden="true">
           <span className="motion-continuous block h-full w-1/2 animate-shimmer bg-brand-brass" />
         </div>
       </div>
@@ -74,6 +83,9 @@ function RouteLoading() {
 
 function AppInner() {
   const { user, loading, logout } = useAuth();
+  const [projectInvitation, setProjectInvitation] = useState(
+    readProjectInvitation,
+  );
   const [invitationToken, setInvitationToken] = useState<string | null>(
     readPendingInvitation,
   );
@@ -140,7 +152,15 @@ function AppInner() {
         className="h-dvh w-full overflow-hidden overscroll-none bg-background"
       >
         <Suspense fallback={<RouteLoading />}>
-          {view === "profile" ? (
+          {projectInvitation ? (
+            <ProjectInvitationPage
+              token={projectInvitation}
+              onDone={() => {
+                sessionStorage.removeItem(PROJECT_INVITATION_KEY);
+                setProjectInvitation(null);
+              }}
+            />
+          ) : view === "profile" ? (
             <ProfilePage
               onBack={() => setView("workspace")}
               pendingInvitationToken={invitationToken}

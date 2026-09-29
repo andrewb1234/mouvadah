@@ -16,10 +16,16 @@ export type TicketAssignee = "HUMAN" | "AGENT" | "UNASSIGNED";
 
 export type ActorRole = "HUMAN" | "AGENT";
 
-export type AuditAction = "STATUS_UPDATE" | "CONTENT_UPDATE" | "MR_LINKED" | "TICKET_CLAIMED" | "TICKET_REQUEUED";
+export type AuditAction =
+  | "STATUS_UPDATE"
+  | "CONTENT_UPDATE"
+  | "MR_LINKED"
+  | "TICKET_CLAIMED"
+  | "TICKET_REQUEUED";
 
 export type SSEAction =
   | "SYNC_REQUIRED"
+  | "PROJECT_ACCESS_CHANGED"
   | "PROJECT_CREATED"
   | "PROJECT_DELETED"
   | "SUBPROJECT_CREATED"
@@ -51,6 +57,13 @@ export type BlockedByCategory =
   | "EXTERNAL";
 
 export interface Project {
+  workspace_name: string;
+  access_source: "workspace" | "project";
+  effective_role: "ADMIN" | "EDITOR" | "VIEWER";
+  can_edit: boolean;
+  can_manage_access: boolean;
+  can_delete_project: boolean;
+  can_leave: boolean;
   id: number;
   workspace_id: number;
   name: string;
@@ -88,6 +101,7 @@ export interface Ticket {
 export interface Comment {
   id: number;
   ticket_id: number;
+  actor_name?: string | null;
   author: ActorRole;
   content: string;
   timestamp: string;
@@ -97,6 +111,7 @@ export interface AuditLog {
   id: number;
   ticket_id: number;
   action: AuditAction;
+  actor_name?: string | null;
   actor: ActorRole;
   timestamp: string;
 }
@@ -342,4 +357,28 @@ export interface WorkspaceMembershipMutation {
   role: WorkspaceRole | null;
   revoked_browser_sessions: number;
   revoked_api_keys: number;
+}
+
+export interface ProjectMember {
+  user_id: number;
+  name: string;
+  email: string | null;
+  avatar_url: string | null;
+  effective_role: "ADMIN" | "EDITOR" | "VIEWER";
+  access_source: "workspace" | "project";
+  direct_role: "EDITOR" | "VIEWER" | null;
+}
+export interface ProjectInvitation {
+  id: number;
+  email: string;
+  role: "EDITOR" | "VIEWER";
+  expires_at: string;
+}
+export interface ProjectInvitationPreview {
+  project_id: number;
+  project_name: string;
+  workspace_name: string;
+  inviter_name: string;
+  role: "EDITOR" | "VIEWER";
+  expires_at: string;
 }

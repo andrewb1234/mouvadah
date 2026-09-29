@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
-  const { setActiveSubprojectId } = useWorkspace();
+  const { setActiveSubprojectId, project } = useWorkspace();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(subproject.name);
   const [brief, setBrief] = useState(subproject.context_brief);
@@ -83,7 +83,9 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
       onDeleted?.();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Failed to delete subproject",
+        caught instanceof Error
+          ? caught.message
+          : "Failed to delete subproject",
       );
     }
   }
@@ -104,7 +106,10 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
               >
                 {subproject.name}
               </h2>
-              <Badge variant="outline" className="font-mono text-[11px] uppercase">
+              <Badge
+                variant="outline"
+                className="font-mono text-[11px] uppercase"
+              >
                 {subproject.status}
               </Badge>
             </div>
@@ -113,29 +118,31 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
                 "No context brief yet. Add the outcome and constraints agents should load before work begins."}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1 self-end sm:self-start">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 sm:h-9 sm:w-9"
-              onClick={() => {
-                reset();
-                setEditing(true);
-              }}
-              aria-label="Edit subproject"
-            >
-              <Pencil className="h-4 w-4" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 text-destructive hover:bg-destructive/10 sm:h-9 sm:w-9"
-              onClick={() => void remove()}
-              aria-label="Delete subproject"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-            </Button>
-          </div>
+          {project?.can_edit && (
+            <div className="flex shrink-0 items-center gap-1 self-end sm:self-start">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 sm:h-9 sm:w-9"
+                onClick={() => {
+                  reset();
+                  setEditing(true);
+                }}
+                aria-label="Edit subproject"
+              >
+                <Pencil className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 text-destructive hover:bg-destructive/10 sm:h-9 sm:w-9"
+                onClick={() => void remove()}
+                aria-label="Delete subproject"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -158,9 +165,7 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
               <label className="technical-label">Lifecycle</label>
               <Select
                 value={status}
-                onValueChange={(value) =>
-                  setStatus(value as SubprojectStatus)
-                }
+                onValueChange={(value) => setStatus(value as SubprojectStatus)}
               >
                 <SelectTrigger
                   className="mt-1 min-h-11 sm:min-h-9"

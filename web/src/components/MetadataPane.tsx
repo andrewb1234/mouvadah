@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -60,8 +61,11 @@ interface Props {
 }
 
 export function MetadataPane({ ticket, onChanged }: Props) {
+  const { project } = useWorkspace();
   const [mrUrl, setMrUrl] = useState(ticket.mr_link ?? "");
-  const [blockedReason, setBlockedReason] = useState(ticket.blocked_reason ?? "");
+  const [blockedReason, setBlockedReason] = useState(
+    ticket.blocked_reason ?? "",
+  );
   const [dependencyIds, setDependencyIds] = useState<number[]>(
     ticket.depends_on ?? [],
   );
@@ -82,11 +86,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
   useEffect(() => {
     setMrUrl(ticket.mr_link ?? "");
     setBlockedReason(ticket.blocked_reason ?? "");
-  }, [
-    ticket.id,
-    ticket.mr_link,
-    ticket.blocked_reason,
-  ]);
+  }, [ticket.id, ticket.mr_link, ticket.blocked_reason]);
 
   useEffect(() => {
     setDependencyIds((current) => {
@@ -183,7 +183,8 @@ export function MetadataPane({ ticket, onChanged }: Props) {
   const leaseExpired =
     leaseExpiry != null && leaseExpiry.getTime() <= Date.now();
   const otherTickets =
-    projectTickets.data?.filter((reference) => reference.id !== ticket.id) ?? [];
+    projectTickets.data?.filter((reference) => reference.id !== ticket.id) ??
+    [];
 
   return (
     <div className="space-y-6 text-sm">
@@ -192,8 +193,8 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           Execution metadata
         </h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Explicit controls remain authoritative. Board columns update after
-          the saved state is returned.
+          Explicit controls remain authoritative. Board columns update after the
+          saved state is returned.
         </p>
       </div>
 
@@ -221,7 +222,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           <Select
             value={ticket.status}
             onValueChange={(value) => void setStatus(value as TicketStatus)}
-            disabled={busyAction != null}
+            disabled={!project?.can_edit || busyAction != null}
           >
             <SelectTrigger
               className="mt-1 min-h-11 sm:min-h-9"
@@ -243,10 +244,8 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           <label className="text-xs font-semibold">Assignee</label>
           <Select
             value={ticket.assignee}
-            onValueChange={(value) =>
-              void setAssignee(value as TicketAssignee)
-            }
-            disabled={busyAction != null}
+            onValueChange={(value) => void setAssignee(value as TicketAssignee)}
+            disabled={!project?.can_edit || busyAction != null}
           >
             <SelectTrigger
               className="mt-1 min-h-11 sm:min-h-9"
@@ -271,7 +270,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
             onValueChange={(value) =>
               void setBlockedBy(value as BlockedByCategory)
             }
-            disabled={busyAction != null}
+            disabled={!project?.can_edit || busyAction != null}
           >
             <SelectTrigger
               className="mt-1 min-h-11 sm:min-h-9"
@@ -289,10 +288,14 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </Select>
           {ticket.status === "BLOCKED" && (
             <div className="mt-2">
-              <label htmlFor={`ticket-${ticket.id}-blocked-reason`} className="sr-only">
+              <label
+                htmlFor={`ticket-${ticket.id}-blocked-reason`}
+                className="sr-only"
+              >
                 Blocked reason
               </label>
               <Input
+                readOnly={!project?.can_edit}
                 id={`ticket-${ticket.id}-blocked-reason`}
                 value={blockedReason}
                 onChange={(event) => setBlockedReason(event.target.value)}
@@ -306,6 +309,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
                 className="mt-2 w-full"
                 onClick={() => void saveBlockedReason()}
                 disabled={
+                  !project?.can_edit ||
                   busyAction != null ||
                   blockedReason === (ticket.blocked_reason ?? "")
                 }
@@ -359,8 +363,8 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </div>
         ) : (
           <p className="border border-dashed border-border p-3 text-xs text-muted-foreground">
-            No worker currently owns this ticket. Claims are created and
-            renewed by agent coordination clients, not this UI.
+            No worker currently owns this ticket. Claims are created and renewed
+            by agent coordination clients, not this UI.
           </p>
         )}
       </MetadataSection>
@@ -368,7 +372,10 @@ export function MetadataPane({ ticket, onChanged }: Props) {
       <MetadataSection title={`Dependencies (${dependencyIds.length})`}>
         <div className="max-h-56 space-y-1 overflow-y-auto border border-border p-1.5">
           {projectTickets.loading && !projectTickets.data && (
-            <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
+            <p
+              role="status"
+              className="px-2 py-2 text-xs text-muted-foreground"
+            >
               Loading project tickets…
             </p>
           )}
@@ -445,12 +452,12 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           size="sm"
           variant="outline"
           onClick={() => void saveDependencies()}
-          disabled={busyAction != null || !dependenciesDirty}
+          disabled={
+            !project?.can_edit || busyAction != null || !dependenciesDirty
+          }
         >
           <Save className="mr-1 h-3.5 w-3.5" aria-hidden />
-          {busyAction === "save dependencies"
-            ? "Saving…"
-            : "Save dependencies"}
+          {busyAction === "save dependencies" ? "Saving…" : "Save dependencies"}
         </Button>
       </MetadataSection>
 
@@ -461,6 +468,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </label>
           <div className="flex items-center gap-2">
             <Input
+              readOnly={!project?.can_edit}
               id={`ticket-${ticket.id}-mr`}
               value={mrUrl}
               onChange={(event) => setMrUrl(event.target.value)}
@@ -472,7 +480,9 @@ export function MetadataPane({ ticket, onChanged }: Props) {
               size="icon"
               variant="outline"
               className="h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-              disabled={busyAction != null || !mrUrl.trim()}
+              disabled={
+                !project?.can_edit || busyAction != null || !mrUrl.trim()
+              }
               aria-label="Attach MR"
             >
               <GitPullRequest className="h-3.5 w-3.5" aria-hidden />
@@ -533,7 +543,11 @@ export function MetadataPane({ ticket, onChanged }: Props) {
                     aria-hidden
                   />
                   <span className="min-w-0">
-                    <strong>{log.actor}</strong>{" "}
+                    <strong>
+                      {log.actor_name
+                        ? `${log.actor_name}${log.actor === "AGENT" ? "’s agent" : ""}`
+                        : log.actor}
+                    </strong>{" "}
                     {log.action.replaceAll("_", " ").toLowerCase()}
                     <time
                       className="mt-0.5 block font-mono text-[11px] text-muted-foreground"
@@ -553,7 +567,10 @@ export function MetadataPane({ ticket, onChanged }: Props) {
       </MetadataSection>
 
       {busyAction && (
-        <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <p
+          role="status"
+          className="flex items-center gap-2 text-xs text-muted-foreground"
+        >
           <Clock3 className="h-3.5 w-3.5" aria-hidden />
           Updating {busyAction}…
         </p>
@@ -571,9 +588,7 @@ function MetadataSection({
 }) {
   return (
     <section className="space-y-3 border-t border-border pt-4">
-      <h3 className="text-sm font-semibold tracking-tight">
-        {title}
-      </h3>
+      <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
       {children}
     </section>
   );

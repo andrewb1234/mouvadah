@@ -2,6 +2,14 @@
 
 Implementation scope approved by the user on 2026-09-29. Visual direction requires separate user confirmation before UI implementation proceeds.
 
+## Implementation checkpoint — September 29, 2026
+
+The approved direction is option 3: a dedicated project People page. Backend checkpoint `fb92ee8` implements project-only membership and invitations, explicit project credentials and hosted OAuth consent, capability-aware APIs, participant attribution, targeted realtime invalidation, and lifecycle/export support. The frontend is implemented for local visual review; production remains on `56c8514` until the rendered UI is confirmed.
+
+Verification: 232 backend tests passed (PostgreSQL tests run separately); 33 focused security/lifecycle tests passed including all 11 PostgreSQL tests, concurrent invitation acceptance, queued-write revocation, legacy-key backfill, and encrypted backup/restore. All 38 browser tests passed; the finish review then identified draft loss on tab focus, denied-read retention, and small mobile tab labels. Fixes passed seven focused browser scenarios, including two-account sharing and one-time-link preservation. Production build passes.
+
+The additive backend and frontend will ship together after visual approval because the OAuth consent change is itself UI. This avoids an unreviewed intermediate production interface. Git checkpoints remain separate. Final CI, production backup evidence, release identity, and post-deployment smoke verification are still required. The remaining sections retain the original analysis for rationale; their baseline findings describe the code before implementation.
+
 ## Release manifest
 
 - Mode: strict (authorization boundaries, migrations, production deployment).
@@ -186,7 +194,7 @@ This is proposed sequencing for approval before implementation; no new tasks wer
 2. **Invitations and access changes:** add creation/preview/acceptance/role/removal/leave and ledger. Prove wrong email, expiry, replay, concurrent acceptance, direct-plus-inherited grants, and revoke-versus-write races.
 3. **Realtime and lifecycle:** add project identity to events, safe user access invalidation, cache clearing, exports/purge/restore. Prove no sibling event metadata leaks and no personal workspace/session loss on project removal.
 4. **Credentials and agents:** add explicit resource modes, project API keys and hosted OAuth consent. Prove scoped agent listing/read/write, read-only enforcement, revocation on existing tokens and refresh, and no empty-allowlist escalation.
-5. **UI and attribution:** deliver project header, Share/People dialog, invitation landing, sidebar grouping, stable links, capability-aware controls, and named authors. Exercise two independent browser accounts on desktop/mobile and through sign-in/reconnect/revocation.
+5. **UI and attribution:** deliver project header, dedicated People page, invitation landing, sidebar grouping, stable links, capability-aware controls, and named authors. Exercise two independent browser accounts on desktop/mobile and through sign-in/reconnect/revocation.
 
 The complete public feature should include scoped agent access because agent collaboration is central to Mouvadah. An internal browser-only milestone can precede it, but should not be described as a complete collaboration release. Defer public links, workspace-to-workspace federation, private-project overrides within existing shared workspaces, commenter-only roles, delegated project admins, ownership transfer, presence, document co-editing, mentions, notifications, and cross-host federation unless separately selected.
 
@@ -214,3 +222,12 @@ Source anchors are relative to `/Users/andrewbetbadal/CascadeProjects/taskable` 
 Ran `.venv/bin/python -m pytest api/tests/test_tenancy.py api/tests/test_workspace_membership_admin.py api/tests/test_sse.py api/tests/test_auth_security.py api/tests/test_hosted_mcp.py -q`: **86 passed**, one Starlette/httpx deprecation warning. These verify the current baseline, not the proposed feature. No new feature tests, PostgreSQL concurrency run, production verification, or rendered UI validation were performed. Existing unrelated working-tree files were left intact.
 
 Mouvadah durable knowledge: no-op. This is a proposal grounded in code and a local research artifact, not an accepted architectural decision; existing implementation tickets were not marked complete or modified.
+
+## Release checkpoint status
+
+- Backend commit: `fb92ee8`.
+- Local visual QA: `design-qa.md`; implementation captures under `output/project-collaboration/`.
+- Render read-only verification: service `srv-d91stg8js32c73a0vahg`, confirmed My Workspace `tea-d4mqscali9vc73f2nipg`, live deployment `dep-daqv62nf3r2c73clrr2g` at baseline `56c851470a46cbe8997fef329f77cf6bb41824aa`.
+- No production mutation performed. Render deploys main automatically; merge should trigger one deployment, not a redundant manual deploy.
+- Rollback must preserve the additive schema and use a forward fix where possible. Do not run downgrade on production automatically. An older application interprets an empty project allowlist as workspace-wide; before any old-code rollback, revoke all `resource_mode = 'PROJECTS'` credentials (the migration downgrade does this, but reverting code alone does not). Project-only guests have no workspace membership and are rejected by the old authentication path.
+- Remaining release gates: rendered visual confirmation, CI on the proposed commit, verified production backup/rollback evidence, deployment and narrow production smoke checks.
