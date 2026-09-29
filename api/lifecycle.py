@@ -209,6 +209,8 @@ def purge_workspace(
 
     # Explicit child-first deletes work the same with SQLite's test setup and
     # PostgreSQL's immediate foreign-key constraints.
+    from api.utils.github_cleanup import purge_workspace_connections
+    purge_workspace_connections(session, workspace_id, project_ids)
     if api_key_ids:
         session.exec(
             delete(ApiKeyProject).where(ApiKeyProject.api_key_id.in_(api_key_ids))

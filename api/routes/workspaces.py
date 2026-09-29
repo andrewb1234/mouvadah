@@ -836,6 +836,8 @@ async def schedule_workspace_deletion(
     workspace.purge_after = purge_after
     workspace.deletion_requested_by = user.id
     workspace.deletion_export_sha256 = payload.export_sha256
+    from api.utils.github_cleanup import disconnect_workspace
+    disconnect_workspace(session, workspace_id)
     session.add(workspace)
 
     api_keys = list(

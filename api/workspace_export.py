@@ -14,6 +14,10 @@ from api.models.entities import (
     ApiKeyProject,
     AuditLog,
     Comment,
+    GitHubConnection,
+    GitHubRepository,
+    GitHubTicketLink,
+    GitHubDelivery,
     KnowledgeNode,
     KnowledgeProposal,
     Project,
@@ -228,6 +232,10 @@ def build_workspace_export(
     )
 
     tables: dict[str, list[dict[str, Any]]] = {
+        "github_connections": _dump_rows(list(session.exec(select(GitHubConnection).where(GitHubConnection.workspace_id == workspace_id)).all())),
+        "github_repositories": _dump_rows(list(session.exec(select(GitHubRepository).where(GitHubRepository.project_id.in_(project_ids))).all())) if project_ids else [],
+        "github_ticket_links": _dump_rows(list(session.exec(select(GitHubTicketLink).where(GitHubTicketLink.ticket_id.in_(ticket_ids))).all())) if ticket_ids else [],
+        "github_deliveries": _dump_rows(list(session.exec(select(GitHubDelivery).where(GitHubDelivery.workspace_id == workspace_id)).all())),
         "users": _dump_rows(users),
         "workspace_memberships": _dump_rows(memberships),
         # Invitation token hashes are bearer-credential material. Export the

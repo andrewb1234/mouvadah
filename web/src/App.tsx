@@ -91,7 +91,7 @@ function AppInner() {
   );
   const [path, setPath] = useState<AppPath>(readAppPath);
   const [view, setView] = useState<"workspace" | "profile">(
-    invitationToken ? "profile" : "workspace",
+    invitationToken || window.location.hash === "#profile" ? "profile" : "workspace",
   );
 
   const navigate = useCallback((nextPath: AppPath, replace = false) => {

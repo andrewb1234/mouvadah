@@ -42,6 +42,49 @@ const API_BASE =
   (import.meta as unknown as { env: Record<string, string> }).env
     .VITE_API_URL ?? "/api/v1";
 
+export interface GitHubRepository {
+  repository_id: number;
+  installation_id: number;
+  project_id: number;
+  full_name: string;
+  status: string;
+}
+export interface GitHubSettings {
+  enabled: boolean;
+  install_url: string | null;
+  connections: Array<{
+    installation_id: number;
+    account_login: string;
+    allowed_repositories: Array<{ id: number; full_name: string }>;
+    status: string;
+    last_error: string | null;
+    updated_at: string;
+    next_sync_at: string;
+  }>;
+  repositories: GitHubRepository[];
+}
+export interface GitHubLink {
+  id: number;
+  kind: "pull" | "issue";
+  number: number;
+  repository_id: number;
+  repository_name: string;
+  snapshot: { title?: string; state?: string; url?: string; head_sha?: string };
+  synced_at: string | null;
+  connection_status: string;
+  repository_status: string;
+}
+export const getGitHubSettings = (workspaceId: number) => request<GitHubSettings>(`/github/workspaces/${workspaceId}`);
+export const connectGitHub = (workspaceId: number, installationId: number) => request<{ authorization_url: string }>(`/github/workspaces/${workspaceId}/connect`, { method: "POST", body: JSON.stringify({ installation_id: installationId }) });
+export const disconnectGitHub = (workspaceId: number, installationId: number) => request<void>(`/github/workspaces/${workspaceId}/connections/${installationId}`, { method: "DELETE" });
+export const reconcileGitHub = (workspaceId: number, installationId: number) => request<void>(`/github/workspaces/${workspaceId}/connections/${installationId}/reconcile`, { method: "POST" });
+export const mapGitHubRepository = (workspaceId: number, installationId: number, repositoryId: number, projectId: number) => request<GitHubRepository>(`/github/workspaces/${workspaceId}/repositories`, { method: "POST", body: JSON.stringify({ installation_id: installationId, repository_id: repositoryId, project_id: projectId }) });
+export const unmapGitHubRepository = (workspaceId: number, repositoryId: number) => request<void>(`/github/workspaces/${workspaceId}/repositories/${repositoryId}`, { method: "DELETE" });
+export const listGitHubRepositories = (projectId: number) => request<GitHubRepository[]>(`/github/projects/${projectId}/repositories`);
+export const listGitHubLinks = (ticketId: number) => request<GitHubLink[]>(`/github/tickets/${ticketId}/links`);
+export const createGitHubLink = (ticketId: number, repositoryId: number, kind: "pull" | "issue", number: number) => request<GitHubLink>(`/github/tickets/${ticketId}/links`, { method: "POST", body: JSON.stringify({ repository_id: repositoryId, kind, number }) });
+export const removeGitHubLink = (ticketId: number, linkId: number) => request<void>(`/github/tickets/${ticketId}/links/${linkId}`, { method: "DELETE" });
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,

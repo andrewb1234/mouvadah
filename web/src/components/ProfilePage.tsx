@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { McpSetupModal } from "@/components/McpSetupModal";
 import { WorkspaceMembersSection } from "@/components/WorkspaceMembersSection";
+import { GitHubSettingsSection } from "@/components/GitHubSettingsSection";
 
 interface ProfilePageProps {
   onBack: () => void;
@@ -55,6 +56,7 @@ const profileSections = [
   ["identity", "Identity"],
   ["agent-credentials", "Agent credentials"],
   ["workspace-access", "Workspace access"],
+  ["github-integration", "GitHub"],
   ["data-recovery", "Data & recovery"],
   ["browser-sessions", "Browser sessions"],
 ] as const;
@@ -930,6 +932,8 @@ export function ProfilePage({
           </div>
 
           {/* Data recovery */}
+          <GitHubSettingsSection workspaces={activeWorkspaces} projects={projects} />
+
           <section
             id="data-recovery"
             aria-labelledby="data-recovery-heading"

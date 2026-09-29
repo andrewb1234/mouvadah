@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import type { SSEPayload, TicketDetail } from "@/types";
 import { CommentThread } from "@/components/CommentThread";
 import { MetadataPane } from "@/components/MetadataPane";
+import { GitHubTicketLinks } from "@/components/GitHubTicketLinks";
 
 interface Props {
   ticketId: number | null;
@@ -398,6 +399,8 @@ function TicketBody({
               </Button>
             </div>
           </section>
+
+          {ticket.project_id && <GitHubTicketLinks key={ticket.id} ticketId={ticket.id} projectId={ticket.project_id} canEdit={Boolean(project?.can_edit)} />}
 
           <section
             aria-labelledby={`ticket-${ticket.id}-discussion-heading`}
