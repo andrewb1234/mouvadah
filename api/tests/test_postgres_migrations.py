@@ -31,6 +31,7 @@ from api.events import Event, EventBroadcaster
 from api.models.entities import (
     AuditLog,
     Project,
+    ProjectMembership,
     Subproject,
     Ticket,
     User,
@@ -270,9 +271,7 @@ def test_cross_tenant_authorization_fails_before_workspace_lock(
     try:
         with Session(postgres_engine) as blocker:
             blocker.exec(
-                select(Workspace)
-                .where(Workspace.id == workspace_id)
-                .with_for_update()
+                select(Workspace).where(Workspace.id == workspace_id).with_for_update()
             ).one()
             with Session(child_engine) as child_session:
                 child_user = child_session.get(User, outsider_id)
@@ -340,9 +339,7 @@ def test_owner_authorization_is_rechecked_after_workspace_lock(
 
     raw_url = make_url(os.environ["POSTGRES_TEST_URL"])
     child_engine = create_engine(
-        raw_url.update_query_dict(
-            {"application_name": "membership-lock-regression"}
-        )
+        raw_url.update_query_dict({"application_name": "membership-lock-regression"})
     )
 
     def queued_invitation() -> int:
@@ -366,9 +363,7 @@ def test_owner_authorization_is_rechecked_after_workspace_lock(
     try:
         with Session(postgres_engine) as blocker:
             locked_workspace = blocker.exec(
-                select(Workspace)
-                .where(Workspace.id == workspace_id)
-                .with_for_update()
+                select(Workspace).where(Workspace.id == workspace_id).with_for_update()
             ).one()
             assert locked_workspace.id == workspace_id
             with ThreadPoolExecutor(max_workers=1) as executor:
@@ -416,8 +411,10 @@ def test_owner_authorization_is_rechecked_after_workspace_lock(
         child_engine.dispose()
 
 
+@pytest.mark.parametrize("direct", [False, True])
 def test_project_write_role_is_rechecked_after_workspace_lock(
     postgres_engine,
+    direct,
 ) -> None:
     upgrade_database(postgres_engine)
     with Session(postgres_engine) as session:
@@ -456,6 +453,23 @@ def test_project_write_role_is_rechecked_after_workspace_lock(
             name="Queued project write",
         )
         session.add(project)
+        session.flush()
+        if direct:
+            member = session.exec(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == workspace.id,
+                    WorkspaceMembership.user_id == writer.id,
+                )
+            ).one()
+            session.delete(member)
+            session.add(
+                ProjectMembership(
+                    project_id=project.id,
+                    user_id=writer.id,
+                    role="EDITOR",
+                    created_by_user_id=owner.id,
+                )
+            )
         session.commit()
         workspace_id = workspace.id
         writer_id = writer.id
@@ -463,9 +477,7 @@ def test_project_write_role_is_rechecked_after_workspace_lock(
 
     raw_url = make_url(os.environ["POSTGRES_TEST_URL"])
     child_engine = create_engine(
-        raw_url.update_query_dict(
-            {"application_name": "project-lock-regression"}
-        )
+        raw_url.update_query_dict({"application_name": "project-lock-regression"})
     )
 
     def queued_project_write() -> int:
@@ -486,9 +498,7 @@ def test_project_write_role_is_rechecked_after_workspace_lock(
     try:
         with Session(postgres_engine) as blocker:
             blocker.exec(
-                select(Workspace)
-                .where(Workspace.id == workspace_id)
-                .with_for_update()
+                select(Workspace).where(Workspace.id == workspace_id).with_for_update()
             ).one()
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(queued_project_write)
@@ -511,14 +521,22 @@ def test_project_write_role_is_rechecked_after_workspace_lock(
                         "Queued project write did not reach the workspace lock."
                     )
 
+                model = ProjectMembership if direct else WorkspaceMembership
                 membership = blocker.exec(
-                    select(WorkspaceMembership).where(
-                        WorkspaceMembership.workspace_id == workspace_id,
-                        WorkspaceMembership.user_id == writer_id,
+                    select(model).where(
+                        (
+                            (model.project_id == project_id)
+                            if direct
+                            else (model.workspace_id == workspace_id)
+                        ),
+                        model.user_id == writer_id,
                     )
                 ).one()
-                membership.role = WorkspaceRole.VIEWER
-                blocker.add(membership)
+                if direct:
+                    blocker.delete(membership)
+                else:
+                    membership.role = WorkspaceRole.VIEWER
+                    blocker.add(membership)
                 blocker.commit()
 
                 assert future.result(timeout=5) == 404
@@ -537,20 +555,13 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
     restore_url = parsed.set(database=restore_database).render_as_string(
         hide_password=False
     )
-    admin_url = parsed.set(database="postgres").render_as_string(
-        hide_password=False
-    )
+    admin_url = parsed.set(database="postgres").render_as_string(hide_password=False)
     admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     with admin_engine.connect() as connection:
         connection.execute(
-            text(
-                "DROP DATABASE IF EXISTS mouvadah_restore_drill_test "
-                "WITH (FORCE)"
-            )
+            text("DROP DATABASE IF EXISTS mouvadah_restore_drill_test " "WITH (FORCE)")
         )
-        connection.execute(
-            text("CREATE DATABASE mouvadah_restore_drill_test")
-        )
+        connection.execute(text("CREATE DATABASE mouvadah_restore_drill_test"))
 
     upgrade_database(postgres_engine)
     with Session(postgres_engine) as session:
@@ -590,9 +601,7 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
             encryption_key=encryption_key,
             postgres_host_override=host_override,
         )
-        assert manifest["authenticated"]["archive_format"] == (
-            "postgresql-custom"
-        )
+        assert manifest["authenticated"]["archive_format"] == ("postgresql-custom")
 
         restore_backup(
             backup_path,
@@ -607,9 +616,7 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
             assert_schema_matches_metadata(restored_engine)
             with Session(restored_engine) as session:
                 names = list(
-                    session.exec(
-                        select(Project.name).order_by(Project.id)
-                    ).all()
+                    session.exec(select(Project.name).order_by(Project.id)).all()
                 )
             assert names == ["Restored PostgreSQL project"]
         finally:
@@ -620,9 +627,7 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
         restored_engine = create_engine(restore_url)
         try:
             with restored_engine.begin() as connection:
-                connection.execute(
-                    text("CREATE SCHEMA restored_customer_data")
-                )
+                connection.execute(text("CREATE SCHEMA restored_customer_data"))
                 connection.execute(
                     text(
                         "CREATE TABLE restored_customer_data.private_rows "
@@ -698,17 +703,132 @@ def test_hosted_mcp_oauth_grants_and_refresh_race(postgres_engine, monkeypatch):
     events.reset_broadcaster()
     try:
         with Session(postgres_engine) as session:
-            user = User(google_id="postgres-mcp-user", email="pg-mcp@example.invalid", name="PG MCP")
-            session.add(user); session.commit(); session.refresh(user)
+            user = User(
+                google_id="postgres-mcp-user",
+                email="pg-mcp@example.invalid",
+                name="PG MCP",
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
         with TestClient(app) as client:
             registered, tokens, _ = connect(client, postgres_engine, user)
             assert rpc(client, tokens["access_token"], "tools/list").status_code == 200
-            form = {"grant_type": "refresh_token", "client_id": registered["client_id"],
-                    "refresh_token": tokens["refresh_token"], "resource": ORIGIN + "/mcp"}
+            form = {
+                "grant_type": "refresh_token",
+                "client_id": registered["client_id"],
+                "refresh_token": tokens["refresh_token"],
+                "resource": ORIGIN + "/mcp",
+            }
             with ThreadPoolExecutor(max_workers=2) as pool:
-                responses = list(pool.map(lambda _: client.post("/oauth/token", data=form), range(2)))
+                responses = list(
+                    pool.map(lambda _: client.post("/oauth/token", data=form), range(2))
+                )
             assert sorted(r.status_code for r in responses) == [200, 400]
             issued = next(r.json() for r in responses if r.status_code == 200)
             assert rpc(client, issued["access_token"], "tools/list").status_code == 401
     finally:
         database._set_engine(original_engine)
+
+
+def test_project_invitation_concurrent_acceptance_is_single_use(postgres_engine):
+    from threading import Barrier
+    from datetime import timedelta
+    from api.api_keys import hash_api_key
+    from api.models.entities import ProjectInvitation
+    from api.routes.project_members import accept, InviteToken
+
+    upgrade_database(postgres_engine)
+    with Session(postgres_engine) as session:
+        owner = User(
+            google_id="race-owner", email="race-owner@example.com", name="Owner"
+        )
+        guest = User(
+            google_id="race-guest", email="race-guest@example.com", name="Guest"
+        )
+        workspace = Workspace(name="Race workspace", slug="race-workspace")
+        session.add_all([owner, guest, workspace])
+        session.flush()
+        project = Project(workspace_id=workspace.id, name="Shared race")
+        session.add(project)
+        session.flush()
+        token = "concurrent-invitation-test-token-1234567890"
+        session.add(
+            ProjectInvitation(
+                project_id=project.id,
+                email=guest.email,
+                role="EDITOR",
+                created_by_user_id=owner.id,
+                token_hash=hash_api_key(token),
+                expires_at=utcnow() + timedelta(days=1),
+            )
+        )
+        session.commit()
+        guest_id, project_id = guest.id, project.id
+    ready = Barrier(2)
+
+    def attempt():
+        with Session(postgres_engine) as session:
+            user = session.get(User, guest_id)
+            ready.wait(timeout=5)
+            try:
+                asyncio.run(accept(InviteToken(token=token), session, user))
+                return 200
+            except HTTPException as exc:
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: attempt(), range(2)))
+    assert sorted(results) == [200, 404]
+    with Session(postgres_engine) as session:
+        assert (
+            len(
+                session.exec(
+                    select(ProjectMembership).where(
+                        ProjectMembership.project_id == project_id
+                    )
+                ).all()
+            )
+            == 1
+        )
+
+
+def test_project_mode_migration_preserves_restrictions(postgres_engine):
+    upgrade_database(postgres_engine, "0008_hosted_mcp_oauth")
+    with postgres_engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO \"user\" (id, google_id, email, name, created_at) VALUES (1, 'migration-user', 'migration@example.com', 'Migration', CURRENT_TIMESTAMP)"
+            )
+        )
+        c.execute(
+            text(
+                "INSERT INTO workspace (id, name, slug, created_at) VALUES (1, 'Migration', 'migration', CURRENT_TIMESTAMP)"
+            )
+        )
+        c.execute(
+            text(
+                "INSERT INTO project (id, workspace_id, name, created_at) VALUES (1, 1, 'Restricted', CURRENT_TIMESTAMP)"
+            )
+        )
+        c.execute(
+            text(
+                "INSERT INTO apikey (id, user_id, workspace_id, name, key_prefix, key_hash, scopes, created_at, revoked) VALUES (1, 1, 1, 'Restricted key', 'prefix', :hash, '[\"read\"]', CURRENT_TIMESTAMP, false), (2, 1, 1, 'Workspace key', 'other', :other, '[\"read\"]', CURRENT_TIMESTAMP, false)"
+            ),
+            {"hash": "a" * 64, "other": "b" * 64},
+        )
+        c.execute(
+            text("INSERT INTO apikeyproject (api_key_id, project_id) VALUES (1,1)")
+        )
+    upgrade_database(postgres_engine, backup_confirmed=True)
+    with postgres_engine.begin() as c:
+        assert c.execute(
+            text("SELECT resource_mode FROM apikey ORDER BY id")
+        ).scalars().all() == ["PROJECTS", "WORKSPACE"]
+        c.execute(text("DELETE FROM apikeyproject WHERE api_key_id = 1"))
+        assert (
+            c.execute(
+                text("SELECT resource_mode FROM apikey WHERE id = 1")
+            ).scalar_one()
+            == "PROJECTS"
+        )

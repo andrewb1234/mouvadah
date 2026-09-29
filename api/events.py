@@ -56,6 +56,8 @@ class Event:
     entity_id: int
     parent_id: int | None = None
     workspace_id: int | None = None
+    project_id: int | None = None
+    recipient_user_id: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -64,6 +66,8 @@ class Event:
             "entity_id": self.entity_id,
             "parent_id": self.parent_id,
             "workspace_id": self.workspace_id,
+            "project_id": self.project_id,
+            "recipient_user_id": self.recipient_user_id,
         }
 
     def to_json(self) -> str:
@@ -89,6 +93,10 @@ class Event:
             parent_id=_optional_int(
                 value.get("parent_id"),
                 field_name="parent_id",
+            ),
+            project_id=_optional_int(value.get("project_id"), field_name="project_id"),
+            recipient_user_id=_optional_int(
+                value.get("recipient_user_id"), field_name="recipient_user_id"
             ),
             workspace_id=_optional_int(
                 value.get("workspace_id"),
@@ -138,11 +146,7 @@ def _listener_kwargs(database_url: str) -> dict[str, Any]:
         "keepalives_count": 3,
     }
     values.update(dict(parsed.query))
-    return {
-        key: value
-        for key, value in values.items()
-        if value is not None
-    }
+    return {key: value for key, value in values.items() if value is not None}
 
 
 class _PostgresTransport:
@@ -183,9 +187,7 @@ class _PostgresTransport:
         )
 
     def _open_listener(self) -> PsycopgConnection:
-        connection = psycopg2.connect(
-            **_listener_kwargs(self._database_url)
-        )
+        connection = psycopg2.connect(**_listener_kwargs(self._database_url))
         connection.autocommit = True
         with connection.cursor() as cursor:
             cursor.execute(f"LISTEN {_CHANNEL}")
@@ -226,9 +228,7 @@ class _PostgresTransport:
         if self._stopping or self._loop is None:
             return
         if self._reconnect_task is None or self._reconnect_task.done():
-            self._reconnect_task = self._loop.create_task(
-                self._reconnect()
-            )
+            self._reconnect_task = self._loop.create_task(self._reconnect())
 
     async def _reconnect(self) -> None:
         delay = 1.0
@@ -243,15 +243,11 @@ class _PostgresTransport:
                 except asyncio.TimeoutError:
                     pass
                 try:
-                    connection = await asyncio.to_thread(
-                        self._open_listener
-                    )
+                    connection = await asyncio.to_thread(self._open_listener)
                 except Exception:
                     record_realtime_reconnect("failed")
                     set_realtime_health(False)
-                    logger.exception(
-                        "Realtime listener reconnect failed; retrying."
-                    )
+                    logger.exception("Realtime listener reconnect failed; retrying.")
                     delay = min(delay * 2, 30.0)
                     continue
                 if self._stopping:
@@ -288,22 +284,16 @@ class _PostgresTransport:
             while connection.notifies:
                 notification = connection.notifies.pop(0)
                 try:
-                    event = self._decode_notification(
-                        notification.payload
-                    )
+                    event = self._decode_notification(notification.payload)
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                     record_realtime_event("postgresql", "invalid")
-                    logger.warning(
-                        "Ignored an invalid realtime notification."
-                    )
+                    logger.warning("Ignored an invalid realtime notification.")
                     continue
                 if event is not None:
                     self._loop.create_task(self._on_event(event))
         except Exception:
             set_realtime_health(False)
-            logger.exception(
-                "Realtime listener disconnected; scheduling reconnect."
-            )
+            logger.exception("Realtime listener disconnected; scheduling reconnect.")
             self._schedule_reconnect()
 
     def _notify(self, payload: str) -> None:
@@ -360,9 +350,7 @@ class _PostgresTransport:
 class EventBroadcaster:
     """Fan out invalidations locally and, for PostgreSQL, across processes."""
 
-    _subscribers: set[asyncio.Queue[QueueItem]] = field(
-        default_factory=set
-    )
+    _subscribers: set[asyncio.Queue[QueueItem]] = field(default_factory=set)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _queue_maxsize: int = 128
     _origin_id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -388,9 +376,7 @@ class EventBroadcaster:
                 raise
             self._transport = transport
         elif backend != "sqlite":
-            raise RuntimeError(
-                f"Unsupported realtime database backend {backend!r}."
-            )
+            raise RuntimeError(f"Unsupported realtime database backend {backend!r}.")
         else:
             set_realtime_health(True)
         self._started = True
@@ -422,9 +408,7 @@ class EventBroadcaster:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
-                queue.put_nowait(
-                    ResyncSignal(reason="subscriber_overflow")
-                )
+                queue.put_nowait(ResyncSignal(reason="subscriber_overflow"))
 
     async def _deliver(self, event: Event) -> None:
         await self._deliver_item(event)
@@ -444,9 +428,7 @@ class EventBroadcaster:
     async def subscribe(
         self,
     ) -> AsyncIterator[asyncio.Queue[QueueItem]]:
-        queue: asyncio.Queue[QueueItem] = asyncio.Queue(
-            maxsize=self._queue_maxsize
-        )
+        queue: asyncio.Queue[QueueItem] = asyncio.Queue(maxsize=self._queue_maxsize)
         async with self._lock:
             self._subscribers.add(queue)
         add_realtime_subscriber(1)

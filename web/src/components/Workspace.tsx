@@ -1,5 +1,6 @@
+import { PeoplePage } from "@/components/PeoplePage";
 import { useEffect } from "react";
-import { Gauge, KanbanSquare, Loader2, Network } from "lucide-react";
+import { Gauge, KanbanSquare, Loader2, Network, Users } from "lucide-react";
 import { useAsync } from "@/hooks/useAsync";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { getSubproject } from "@/lib/api";
@@ -17,6 +18,10 @@ interface Props {
 
 export function Workspace({ lastEvent }: Props) {
   const {
+    project,
+    projectLoading,
+    projectError,
+    accessRevision,
     activeProjectId,
     activeSubprojectId,
     activeProjectName,
@@ -72,11 +77,15 @@ export function Workspace({ lastEvent }: Props) {
           >
             {activeProjectId == null
               ? "No project selected"
-              : activeProjectName ?? `Project #${activeProjectId}`}
+              : (project?.name ??
+                activeProjectName ??
+                `Project #${activeProjectId}`)}
           </span>
           {activeSubprojectId != null && (
             <>
-              <span className="text-muted-foreground" aria-hidden>/</span>
+              <span className="text-muted-foreground" aria-hidden>
+                /
+              </span>
               <span
                 className="min-w-0 truncate text-sm text-muted-foreground"
                 title={activeSubprojectName ?? undefined}
@@ -86,7 +95,10 @@ export function Workspace({ lastEvent }: Props) {
             </>
           )}
         </div>
-        <nav className="grid grid-cols-3 gap-1 sm:gap-2" aria-label="Workspace views">
+        <nav
+          className="grid grid-cols-4 gap-1 sm:gap-2"
+          aria-label="Workspace views"
+        >
           <ViewTab
             active={view === "control"}
             onClick={() => setView("control")}
@@ -112,21 +124,51 @@ export function Workspace({ lastEvent }: Props) {
                 : "Execute and hand off work"
             }
           />
+          <ViewTab
+            active={view === "people"}
+            onClick={() => setView("people")}
+            icon={<Users className="h-4 w-4" />}
+            label="People"
+            description="Project access and invitations"
+          />
         </nav>
+        {project && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Owned by {project.workspace_name}
+            {!project.can_edit && " · View only"}
+          </p>
+        )}
       </header>
       {activeProjectId == null ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
           Open workspace navigation and select a project to get started.
         </div>
+      ) : projectLoading ? (
+        <p role="status" className="p-6 text-sm text-muted-foreground">
+          Checking project access…
+        </p>
+      ) : projectError || !project ? (
+        <div role="alert" className="p-6">
+          <h2 className="text-lg font-semibold">Project unavailable</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This project may have been removed, or your access has changed.
+            Choose another project from navigation or ask its owner for access.
+          </p>
+        </div>
+      ) : view === "people" ? (
+        <PeoplePage
+          key={`${activeProjectId}:${accessRevision}`}
+          project={project}
+        />
       ) : view === "control" ? (
         <ControlRoom
-          key={activeProjectId}
+          key={`${activeProjectId}:${accessRevision}`}
           projectId={activeProjectId}
           lastEvent={lastEvent}
         />
       ) : view === "knowledge" ? (
         <KnowledgePanel
-          key={activeProjectId}
+          key={`${activeProjectId}:${accessRevision}`}
           projectId={activeProjectId}
           lastEvent={lastEvent}
         />
@@ -189,20 +231,14 @@ interface ViewTabProps {
   description: string;
 }
 
-function ViewTab({
-  active,
-  onClick,
-  icon,
-  label,
-  description,
-}: ViewTabProps) {
+function ViewTab({ active, onClick, icon, label, description }: ViewTabProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-w-0 items-center gap-1 overflow-hidden border px-2 py-2 text-left transition-colors sm:gap-2 sm:px-3",
+        "flex min-w-0 flex-col items-center justify-center gap-1 overflow-hidden border px-1 py-2 text-center transition-colors sm:flex-row sm:justify-start sm:gap-2 sm:px-3 sm:text-left",
         active
           ? "border-brand-brass bg-brand-brass/10 text-foreground"
           : "border-border bg-background/40 text-muted-foreground hover:bg-accent/40",
@@ -212,7 +248,7 @@ function ViewTab({
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-xs font-semibold">{label}</span>
+        <span className="block text-xs font-semibold sm:truncate">{label}</span>
         <span className="hidden truncate text-[10px] text-muted-foreground sm:block">
           {description}
         </span>

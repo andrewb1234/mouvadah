@@ -56,6 +56,7 @@ export function Sidebar({
     if (!lastEvent) return;
     if (
       lastEvent.action === "SYNC_REQUIRED" ||
+      lastEvent.action === "PROJECT_ACCESS_CHANGED" ||
       lastEvent.action === "PROJECT_CREATED" ||
       lastEvent.action === "PROJECT_DELETED"
     ) {
@@ -70,16 +71,6 @@ export function Sidebar({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
-
-  useEffect(() => {
-    if (
-      activeProjectId != null &&
-      projects.data &&
-      !projects.data.some((project) => project.id === activeProjectId)
-    ) {
-      setActiveProjectId(null);
-    }
-  }, [activeProjectId, projects.data, setActiveProjectId]);
 
   async function handleDeleteProject(project: Project) {
     if (
@@ -99,11 +90,7 @@ export function Sidebar({
 
   // Default-select the first project once data arrives.
   useEffect(() => {
-    if (
-      activeProjectId == null &&
-      projects.data &&
-      projects.data.length > 0
-    ) {
+    if (activeProjectId == null && projects.data && projects.data.length > 0) {
       setActiveProjectId(projects.data[0].id, projects.data[0].name);
     }
   }, [activeProjectId, projects.data, setActiveProjectId]);
@@ -125,9 +112,7 @@ export function Sidebar({
         <div className="space-y-4 px-3 py-5">
           <section>
             <div className="mb-3 flex items-center justify-between px-1">
-              <span className="technical-label">
-                Project hierarchy
-              </span>
+              <span className="technical-label">Your projects</span>
               <NewProjectButton onCreated={projects.refetch} />
             </div>
             {projects.loading && (
@@ -146,52 +131,74 @@ export function Sidebar({
                 No projects yet. Create one to begin.
               </p>
             )}
-            <ul className="space-y-1">
-              {projects.data?.map((project) => (
-                <li key={project.id}>
-                  <div
-                    className={cn(
-                      "group flex items-center gap-1 border-l-2 pr-1 transition-colors",
-                      activeProjectId === project.id
-                        ? "border-brand-brass bg-accent text-accent-foreground"
-                        : "border-transparent hover:bg-accent/50",
-                    )}
-                  >
-                    <button
-                      className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm md:min-h-0"
-                      onClick={() => {
-                        setActiveProjectId(project.id, project.name);
-                        onNavigate?.();
-                      }}
-                      title={project.name}
-                    >
-                      <Folder className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{project.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-7 md:w-7 md:opacity-0 md:group-hover:opacity-100"
-                      aria-label={`Delete ${project.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProject(project);
-                      }}
-                    >
-                      <Trash2 className="mx-auto h-3 w-3" />
-                    </button>
-                  </div>
-                  {activeProjectId === project.id && (
-                    <SubprojectList
-                      projectId={project.id}
-                      lastEvent={lastEvent}
-                      activeSubprojectId={activeSubprojectId}
-                      onSelect={setActiveSubprojectId}
-                      onNavigate={onNavigate}
-                    />
+            {(["workspace", "project"] as const).map((source) => (
+              <div key={source}>
+                {source === "project" && (
+                  <h2 className="technical-label mb-3 mt-6 px-1">
+                    Shared with me
+                  </h2>
+                )}
+                <ul className="space-y-1">
+                  {projects.data
+                    ?.filter((project) => project.access_source === source)
+                    .map((project) => (
+                      <li key={project.id}>
+                        <div
+                          className={cn(
+                            "group flex items-center gap-1 border-l-2 pr-1 transition-colors",
+                            activeProjectId === project.id
+                              ? "border-brand-brass bg-accent text-accent-foreground"
+                              : "border-transparent hover:bg-accent/50",
+                          )}
+                        >
+                          <button
+                            className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm md:min-h-0"
+                            onClick={() => {
+                              setActiveProjectId(project.id, project.name);
+                              onNavigate?.();
+                            }}
+                            title={project.name}
+                          >
+                            <Folder className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{project.name}</span>
+                          </button>
+                          {project.can_delete_project && (
+                            <button
+                              type="button"
+                              className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-7 md:w-7 md:opacity-0 md:group-hover:opacity-100"
+                              aria-label={`Delete ${project.name}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteProject(project);
+                              }}
+                            >
+                              <Trash2 className="mx-auto h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {activeProjectId === project.id && (
+                          <SubprojectList
+                            canEdit={project.can_edit}
+                            projectId={project.id}
+                            lastEvent={lastEvent}
+                            activeSubprojectId={activeSubprojectId}
+                            onSelect={setActiveSubprojectId}
+                            onNavigate={onNavigate}
+                          />
+                        )}
+                      </li>
+                    ))}
+                </ul>
+                {source === "project" &&
+                  !projects.data?.some(
+                    (p) => p.access_source === "project",
+                  ) && (
+                    <p className="px-1 text-xs text-muted-foreground">
+                      Projects shared with you appear here.
+                    </p>
                   )}
-                </li>
-              ))}
-            </ul>
+              </div>
+            ))}
           </section>
         </div>
       </ScrollArea>
@@ -250,12 +257,14 @@ export function Sidebar({
 }
 
 function SubprojectList({
+  canEdit,
   projectId,
   lastEvent,
   activeSubprojectId,
   onSelect,
   onNavigate,
 }: {
+  canEdit: boolean;
   projectId: number;
   lastEvent: SSEPayload | null;
   activeSubprojectId: number | null;
@@ -301,9 +310,7 @@ function SubprojectList({
 
   async function handleDelete(sub: Subproject) {
     if (
-      !window.confirm(
-        `Delete subproject "${sub.name}" and all of its tickets?`,
-      )
+      !window.confirm(`Delete subproject "${sub.name}" and all of its tickets?`)
     ) {
       return;
     }
@@ -321,10 +328,12 @@ function SubprojectList({
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Subprojects
         </span>
-        <NewSubprojectButton
-          projectId={projectId}
-          onCreated={subprojects.refetch}
-        />
+        {canEdit && (
+          <NewSubprojectButton
+            projectId={projectId}
+            onCreated={subprojects.refetch}
+          />
+        )}
       </div>
       <ul className="space-y-0.5">
         {subprojects.data?.map((sub) => (
@@ -351,17 +360,19 @@ function SubprojectList({
                   {sub.status.slice(0, 4)}
                 </span>
               </button>
-              <button
-                type="button"
-                className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
-                aria-label={`Delete ${sub.name}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(sub);
-                }}
-              >
-                <Trash2 className="mx-auto h-3 w-3" />
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
+                  aria-label={`Delete ${sub.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(sub);
+                  }}
+                >
+                  <Trash2 className="mx-auto h-3 w-3" />
+                </button>
+              )}
             </div>
           </li>
         ))}

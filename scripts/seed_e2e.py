@@ -35,15 +35,10 @@ def _validated_database_path() -> Path:
         raise RuntimeError("Playwright seeding requires a file-backed SQLite URL.")
     actual = Path(configured).resolve()
     expected = (
-        Path(__file__).resolve().parents[1]
-        / "web"
-        / "tests"
-        / ".e2e-taskable.db"
+        Path(__file__).resolve().parents[1] / "web" / "tests" / ".e2e-taskable.db"
     ).resolve()
     if engine.dialect.name != "sqlite" or actual != expected:
-        raise RuntimeError(
-            "Refusing to seed outside web/tests/.e2e-taskable.db."
-        )
+        raise RuntimeError("Refusing to seed outside web/tests/.e2e-taskable.db.")
     return actual
 
 
@@ -93,6 +88,29 @@ def main() -> None:
                 # This fixture drives remote-deletion browser scenarios. Keep
                 # destructive access explicit and isolated to the disposable
                 # Playwright database.
+                scopes=[READ_SCOPE, WRITE_SCOPE, DELETE_SCOPE],
+            )
+        )
+        # A second independent account exercises project sharing in browser tests.
+        session.add(
+            User(
+                id=2,
+                google_id="collaboration-test-guest",
+                email="jordan@example.invalid",
+                name="Jordan Lee",
+            )
+        )
+        session.add(Workspace(id=2, name="Jordan’s Workspace", slug="jordan-test"))
+        session.add(
+            WorkspaceMembership(workspace_id=2, user_id=2, role=WorkspaceRole.OWNER)
+        )
+        session.add(
+            ApiKey(
+                user_id=2,
+                workspace_id=2,
+                name="Guest test",
+                key_hash=hash_api_key("collaboration_guest_test_only"),
+                key_prefix="collaboratio",
                 scopes=[READ_SCOPE, WRITE_SCOPE, DELETE_SCOPE],
             )
         )

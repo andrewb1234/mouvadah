@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Request
 from sqlmodel import select
 
 from api.auth import CurrentUser
-from api.authorization import require_ticket, workspace_id_for_ticket
+from api.authorization import (
+    project_id_for_subproject,
+    require_ticket,
+    workspace_id_for_ticket,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import Comment
-from api.models.enums import SSEAction
+from api.models.enums import SSEAction, ActorRole
 from api.schemas import CommentCreate, CommentRead
 
 router = APIRouter(prefix="/tickets", tags=["comments"])
@@ -40,13 +44,23 @@ def list_comments(
 async def create_comment(
     ticket_id: int,
     payload: CommentCreate,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
 ) -> Comment:
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
 
     comment = Comment(
-        ticket_id=ticket_id, author=payload.author, content=payload.content
+        actor_user_id=user.id,
+        actor_name=user.name,
+        ticket_id=ticket_id,
+        author=(
+            ActorRole.AGENT
+            if request.state.auth_method == "api_key"
+            else ActorRole.HUMAN
+        ),
+        content=payload.content,
     )
     session.add(comment)
     session.commit()
@@ -58,6 +72,7 @@ async def create_comment(
             entity="comment",
             entity_id=comment.id,  # type: ignore[arg-type]
             parent_id=ticket.id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]

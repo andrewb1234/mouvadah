@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { useCallback, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Plus, X } from "lucide-react";
 import { TicketCard } from "@/components/TicketCard";
@@ -48,7 +49,8 @@ export function KanbanBoard({
       REVIEW: [],
       DONE: [],
     };
-    for (const ticket of subproject.tickets) grouped[ticket.status].push(ticket);
+    for (const ticket of subproject.tickets)
+      grouped[ticket.status].push(ticket);
     return grouped;
   }, [subproject.tickets]);
 
@@ -129,6 +131,7 @@ function KanbanColumn({
   onTicketDelete,
   onCreated,
 }: ColumnProps) {
+  const { project } = useWorkspace();
   const [creating, setCreating] = useState(false);
 
   return (
@@ -151,7 +154,7 @@ function KanbanColumn({
             {String(tickets.length).padStart(2, "0")}
           </span>
         </div>
-        {status === "TODO" && (
+        {project?.can_edit && status === "TODO" && (
           <Button
             size="icon"
             variant="ghost"
@@ -184,7 +187,9 @@ function KanbanColumn({
             key={ticket.id}
             ticket={ticket}
             onClick={() => onTicketClick(ticket.id)}
-            onDelete={() => onTicketDelete(ticket)}
+            onDelete={
+              project?.can_edit ? () => onTicketDelete(ticket) : undefined
+            }
           />
         ))}
         {tickets.length === 0 && !creating && (

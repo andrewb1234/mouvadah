@@ -24,7 +24,12 @@ from sqlmodel import Session, select
 from api import database
 from api.api_keys import hash_api_key, issue_api_key
 from api.auth import get_current_user
-from api.authorization import require_workspace
+from api.authorization import (
+    require_workspace,
+    require_project,
+    accessible_projects_query,
+    project_access,
+)
 from api.config import get_settings
 from api.dependencies import SessionDep, SettingsDep
 from api.models.entities import (
@@ -259,7 +264,8 @@ async def authorize(request: Request, session: SessionDep, settings: SettingsDep
             Workspace.deletion_requested_at.is_(None),
         )
     ).all()
-    if not workspaces:
+    projects = session.exec(accessible_projects_query(user)).all()
+    if not workspaces and not projects:
         return page(
             "Join a workspace first",
             '<p>Open Mouvadah and create a workspace or accept your team’s invitation, then connect again.</p><a href="/app">Open Mouvadah</a>',
@@ -285,8 +291,20 @@ async def authorize(request: Request, session: SessionDep, settings: SettingsDep
         if "write" in scopes
         else '<input type="hidden" name="access" value="read">'
     )
-    options = "".join(
-        f'<option value="{w.id}">{html.escape(w.name)}</option>' for w in workspaces
+    options = (
+        '<optgroup label="One project">'
+        + "".join(
+            f'<option value="project:{p.id}">{html.escape(p.name)} · {html.escape(session.get(Workspace, p.workspace_id).name)}'
+            + (" (read only)" if not project_access(session, user, p).can_edit else "")
+            + "</option>"
+            for p in projects
+        )
+        + '</optgroup><optgroup label="Entire workspace">'
+        + "".join(
+            f'<option value="workspace:{w.id}">{html.escape(w.name)} · all projects</option>'
+            for w in workspaces
+        )
+        + "</optgroup>"
     )
     name = html.escape(client.metadata_json["client_name"])
     host = html.escape(urlsplit(q["redirect_uri"]).netloc)
@@ -298,10 +316,10 @@ async def authorize(request: Request, session: SessionDep, settings: SettingsDep
     return page(
         f"Connect {client.metadata_json['client_name']}?",
         f"""<p>Signed in as <strong>{html.escape(user.email)}</strong>.</p>
-<p><strong>{name}</strong> will be able to {access.lower()} in the workspace you choose. It cannot delete data or manage your account.</p>
+<p><strong>{name}</strong> will be able to {access.lower()} in the project or workspace you choose. Project access includes its existing history. It cannot delete data or manage your account.</p>
 <p class="muted">You can revoke this connection at any time in Settings → Agent credentials. Access expires after 30 days; reconnect to renew it.</p>
 <form method="post" action="/oauth/authorize"><input type="hidden" name="consent" value="{html.escape(consent)}">
-<label for="workspace">Workspace</label><select id="workspace" name="workspace_id" required>{options}</select>{access_choice}
+<label for="target">Connect to</label><select id="target" name="target" required>{options}</select>{access_choice}
 <p class="muted">After approval, return to <code>{host}</code>. Only approve a client you intended to connect.</p>
 <button name="decision" value="allow">Allow connection</button><button name="decision" value="deny">Cancel</button></form>""",
         callback_origin=urlunsplit((*urlsplit(q["redirect_uri"])[:2], "", "", "")),
@@ -345,9 +363,17 @@ async def approve(request: Request, session: SessionDep, settings: SettingsDep):
             consent["redirect_uri"], error="access_denied", state=consent["state"]
         )
     try:
-        workspace_id = int(str(form.get("workspace_id", "")))
+        target = str(form.get("target", ""))
+        if target:
+            kind, raw_id = target.split(":", 1)
+            if kind not in {"project", "workspace"}:
+                raise ValueError()
+            target_id = int(raw_id)
+        else:
+            # Existing consent forms remain valid during a rolling deploy.
+            kind, target_id = "workspace", int(str(form.get("workspace_id", "")))
     except ValueError:
-        return error("invalid_request", "Select a workspace.")
+        return error("invalid_request", "Select a project or workspace.")
     granted_scopes = sorted(set(str(form.get("access", "read")).split()))
     if "read" not in granted_scopes or not set(granted_scopes).issubset(
         set(consent["scopes"])
@@ -355,9 +381,18 @@ async def approve(request: Request, session: SessionDep, settings: SettingsDep):
         return error(
             "invalid_scope", "Access must be within the requested permissions."
         )
-    require_workspace(
-        session, user, workspace_id, write="write" in granted_scopes, lock=True
-    )
+    project_ids = []
+    if kind == "project":
+        project = require_project(
+            session, user, target_id, write="write" in granted_scopes
+        )
+        workspace_id = project.workspace_id
+        project_ids = [project.id]
+    else:
+        workspace_id = target_id
+        require_workspace(
+            session, user, workspace_id, write="write" in granted_scopes, lock=True
+        )
     key, _ = issue_api_key(
         session,
         user_id=user.id,
@@ -365,6 +400,7 @@ async def approve(request: Request, session: SessionDep, settings: SettingsDep):
         name=f"MCP: {client.metadata_json['client_name']}"[:100],
         scopes=granted_scopes,
         expires_in_days=30,
+        project_ids=project_ids,
     )
     code = secrets.token_urlsafe(32)
     session.add(
@@ -413,15 +449,11 @@ def active_key(session: Session, key_id: int):
     key = session.get(ApiKey, key_id)
     if not key or key.revoked or (key.expires_at and key.expires_at <= utcnow()):
         return None
-    membership = session.exec(
-        select(WorkspaceMembership).where(
-            WorkspaceMembership.user_id == key.user_id,
-            WorkspaceMembership.workspace_id == key.workspace_id,
-        )
-    ).first()
-    workspace = session.get(Workspace, key.workspace_id)
-    if not membership or not workspace or workspace.deletion_requested_at is not None:
+    from api.api_keys import key_has_current_access
+
+    if not key_has_current_access(session, key):
         return None
+
     return key
 
 

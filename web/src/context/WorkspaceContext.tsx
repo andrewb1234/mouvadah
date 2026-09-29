@@ -1,15 +1,26 @@
+import { ApiError, getProject } from "@/lib/api";
+import { useAsync, clearAsyncCache } from "@/hooks/useAsync";
+import type { Project } from "@/types";
 import {
   createContext,
   useCallback,
+  useEffect,
   useContext,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
 
-export type WorkspaceView = "control" | "subproject" | "knowledge";
+export type WorkspaceView = "control" | "subproject" | "knowledge" | "people";
 
 interface WorkspaceState {
+  project: Project | null;
+  projectLoading: boolean;
+  projectError: Error | null;
+  accessRevision: number;
+  refreshAccess: () => void;
+  revalidateAccess: () => Promise<void>;
   activeProjectId: number | null;
   activeSubprojectId: number | null;
   activeProjectName: string | null;
@@ -26,11 +37,11 @@ const WorkspaceContext = createContext<WorkspaceState | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeProjectId, setActiveProjectIdRaw] = useState<number | null>(
-    null,
+    Number(new URLSearchParams(window.location.search).get("project")) || null,
   );
-  const [activeSubprojectId, setActiveSubprojectIdRaw] = useState<number | null>(
-    null,
-  );
+  const [activeSubprojectId, setActiveSubprojectIdRaw] = useState<
+    number | null
+  >(null);
   const [activeProjectName, setActiveProjectName] = useState<string | null>(
     null,
   );
@@ -40,8 +51,53 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeTicketId, setActiveTicketId] = useState<number | null>(null);
   const [view, setView] = useState<WorkspaceView>("control");
 
+  const [accessRevision, setAccessRevision] = useState(0);
+  const current = useAsync(
+    () =>
+      activeProjectId == null
+        ? Promise.resolve(null)
+        : getProject(activeProjectId),
+    [activeProjectId, accessRevision],
+  );
+  const refreshAccess = useCallback(() => {
+    clearAsyncCache();
+    setActiveTicketId(null);
+    setAccessRevision((n) => n + 1);
+  }, []);
+
+  const liveProjectId = useRef(activeProjectId);
+  liveProjectId.current = activeProjectId;
+  const validationRun = useRef(0);
+  const revalidateAccess = useCallback(async () => {
+    if (activeProjectId == null || !current.data) return;
+    const run = ++validationRun.current;
+    const stillCurrent = () =>
+      run === validationRun.current &&
+      liveProjectId.current === activeProjectId;
+    try {
+      const latest = await getProject(activeProjectId);
+      if (
+        stillCurrent() &&
+        JSON.stringify(latest) !== JSON.stringify(current.data)
+      )
+        refreshAccess();
+    } catch (error) {
+      if (
+        stillCurrent() &&
+        error instanceof ApiError &&
+        [401, 403, 404].includes(error.status)
+      )
+        refreshAccess();
+      // A transient network failure does not discard drafts or one-time secrets.
+    }
+  }, [activeProjectId, current.data, refreshAccess]);
+
   const setActiveProjectId = useCallback(
     (id: number | null, name: string | null = null) => {
+      const url = new URL(window.location.href);
+      if (id == null) url.searchParams.delete("project");
+      else url.searchParams.set("project", String(id));
+      window.history.pushState({}, "", url);
       setActiveProjectIdRaw(id);
       setActiveProjectName(id == null ? null : name);
       // Switching project invalidates subproject/ticket context.
@@ -67,8 +123,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setActiveTicketId(id);
   }, []);
 
+  useEffect(() => {
+    const onPop = () => {
+      setActiveProjectIdRaw(
+        Number(new URLSearchParams(window.location.search).get("project")) ||
+          null,
+      );
+      setActiveSubprojectIdRaw(null);
+      setActiveTicketId(null);
+      setView("control");
+      refreshAccess();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [refreshAccess]);
+
   const value = useMemo(
     () => ({
+      project:
+        current.loading || current.error || current.data?.id !== activeProjectId
+          ? null
+          : current.data,
+      projectLoading: current.loading,
+      projectError: current.error,
+      accessRevision,
+      refreshAccess,
+      revalidateAccess,
       activeProjectId,
       activeSubprojectId,
       activeProjectName,
@@ -81,6 +161,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setView,
     }),
     [
+      current.data,
+      current.loading,
+      current.error,
+      accessRevision,
+      refreshAccess,
+      revalidateAccess,
       activeProjectId,
       activeSubprojectId,
       activeProjectName,

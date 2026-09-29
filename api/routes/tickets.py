@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from api.auth import CurrentUser
 from api.authorization import (
+    project_id_for_subproject,
     require_knowledge_node,
     require_subproject,
     require_ticket,
@@ -97,6 +98,7 @@ async def update_ticket(
     user: CurrentUser,
 ) -> Ticket:
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -110,7 +112,11 @@ async def update_ticket(
         except ValueError as exc:  # pragma: no cover - pydantic catches this
             raise HTTPException(status_code=400, detail="Invalid status.") from exc
         new_status = updates["status"]
-        if new_status == TicketStatus.BLOCKED and not updates.get("blocked_by") and not ticket.blocked_by:
+        if (
+            new_status == TicketStatus.BLOCKED
+            and not updates.get("blocked_by")
+            and not ticket.blocked_by
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="blocked_by is required when setting status to BLOCKED.",
@@ -123,10 +129,18 @@ async def update_ticket(
 
     if any(k in updates for k in ("title", "description")):
         original = {"title": ticket.title, "description": ticket.description}
-        if any(updates.get(k) != original[k] for k in ("title", "description") if k in updates):
+        if any(
+            updates.get(k) != original[k]
+            for k in ("title", "description")
+            if k in updates
+        ):
             audit_events.append(AuditAction.CONTENT_UPDATE)
 
-    if "mr_link" in updates and updates["mr_link"] != ticket.mr_link and updates["mr_link"]:
+    if (
+        "mr_link" in updates
+        and updates["mr_link"] != ticket.mr_link
+        and updates["mr_link"]
+    ):
         audit_events.append(AuditAction.MR_LINKED)
 
     if "depends_on" in updates:
@@ -141,7 +155,15 @@ async def update_ticket(
 
     session.add(ticket)
     for action in audit_events:
-        session.add(AuditLog(ticket_id=ticket.id, action=action, actor=actor))
+        session.add(
+            AuditLog(
+                actor_user_id=user.id,
+                actor_name=user.name,
+                ticket_id=ticket.id,
+                action=action,
+                actor=actor,
+            )
+        )
     session.commit()
     session.refresh(ticket)
 
@@ -151,6 +173,7 @@ async def update_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -171,6 +194,7 @@ async def delete_ticket(
 ) -> None:
     """Delete a ticket and cascade its comments, audit logs, and dependency edges."""
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     subproject_id = ticket.subproject_id
     workspace_id = workspace_id_for_ticket(session, ticket_id)
     delete_ticket_dependencies(session, [ticket_id])
@@ -183,6 +207,7 @@ async def delete_ticket(
             entity="ticket",
             entity_id=ticket_id,
             parent_id=subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id,
         )
     )
@@ -207,12 +232,19 @@ async def attach_mr_link(
     is provided later, this route can grow a branch-creation side-effect.
     """
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     actor = _infer_actor(request)
 
     ticket.mr_link = payload.url
     session.add(ticket)
     session.add(
-        AuditLog(ticket_id=ticket.id, action=AuditAction.MR_LINKED, actor=actor)
+        AuditLog(
+            actor_user_id=user.id,
+            actor_name=user.name,
+            ticket_id=ticket.id,
+            action=AuditAction.MR_LINKED,
+            actor=actor,
+        )
     )
     session.commit()
     session.refresh(ticket)
@@ -223,6 +255,7 @@ async def attach_mr_link(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -302,6 +335,7 @@ async def claim_ticket(
     from api.utils.time import utcnow
 
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     now = utcnow().replace(microsecond=0)
     if not _claim_ticket_atomic(session, ticket_id, payload.worker_id, now):
         session.rollback()
@@ -312,6 +346,8 @@ async def claim_ticket(
 
     session.add(
         AuditLog(
+            actor_user_id=user.id,
+            actor_name=user.name,
             ticket_id=ticket_id,
             action=AuditAction.TICKET_CLAIMED,
             actor=_infer_actor(request),
@@ -327,6 +363,7 @@ async def claim_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -351,6 +388,7 @@ async def heartbeat_ticket(
     from api.utils.time import utcnow
 
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     now = utcnow().replace(microsecond=0)
     heartbeat = session.execute(
         update(Ticket)
@@ -378,6 +416,7 @@ async def heartbeat_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -387,7 +426,9 @@ async def heartbeat_ticket(
     return build_ticket_read(session, ticket)
 
 
-@router.post("/subprojects/{subproject_id}/requeue-expired", response_model=list[TicketRead])
+@router.post(
+    "/subprojects/{subproject_id}/requeue-expired", response_model=list[TicketRead]
+)
 async def requeue_expired(
     subproject_id: int,
     session: SessionDep,
@@ -399,7 +440,8 @@ async def requeue_expired(
     """
     from api.utils.time import utcnow
 
-    require_subproject(session, user, subproject_id, write=True)
+    subproject = require_subproject(session, user, subproject_id, write=True)
+    project_id = subproject.project_id
     workspace_id = workspace_id_for_subproject(session, subproject_id)
     now = utcnow()
     candidate_ids = list(
@@ -431,6 +473,8 @@ async def requeue_expired(
         requeued_ids.append(candidate_id)
         session.add(
             AuditLog(
+                actor_user_id=user.id,
+                actor_name=user.name,
                 ticket_id=candidate_id,
                 action=AuditAction.TICKET_REQUEUED,
                 actor=ActorRole.AGENT,
@@ -448,6 +492,7 @@ async def requeue_expired(
                 entity="ticket",
                 entity_id=ticket_id,
                 parent_id=subproject_id,
+                project_id=project_id,
                 workspace_id=workspace_id,
             )
         )

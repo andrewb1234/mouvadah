@@ -23,6 +23,8 @@ from api.models.entities import (
     KnowledgeNode,
     KnowledgeProposal,
     Project,
+    ProjectMembership,
+    ProjectInvitation,
     Subproject,
     Ticket,
     TicketDependency,
@@ -90,9 +92,7 @@ def _workspace_graph(
         else []
     )
     api_key_ids = _ids(
-        session.exec(
-            select(ApiKey.id).where(ApiKey.workspace_id == workspace_id)
-        ).all()
+        session.exec(select(ApiKey.id).where(ApiKey.workspace_id == workspace_id)).all()
     )
     return {
         "project": project_ids,
@@ -112,25 +112,17 @@ def purge_workspace(
     """Permanently remove one expired workspace and verify the sweep."""
     evidence = backup_evidence.strip()
     if len(evidence) < 8:
-        raise ValueError(
-            "Verified backup evidence is required before permanent purge."
-        )
+        raise ValueError("Verified backup evidence is required before permanent purge.")
     workspace = session.exec(
-        select(Workspace)
-        .where(Workspace.id == workspace_id)
-        .with_for_update()
+        select(Workspace).where(Workspace.id == workspace_id).with_for_update()
     ).first()
     now = utcnow()
     if workspace is None:
         raise ValueError(f"Workspace {workspace_id} does not exist.")
     if workspace.purge_after is None or workspace.deletion_requested_at is None:
-        raise ValueError(
-            f"Workspace {workspace_id} is not scheduled for deletion."
-        )
+        raise ValueError(f"Workspace {workspace_id} is not scheduled for deletion.")
     if workspace.purge_after > now:
-        raise ValueError(
-            f"Workspace {workspace_id} recovery window has not expired."
-        )
+        raise ValueError(f"Workspace {workspace_id} recovery window has not expired.")
 
     graph = _workspace_graph(session, workspace_id)
     project_ids = graph["project"]
@@ -219,9 +211,7 @@ def purge_workspace(
     # PostgreSQL's immediate foreign-key constraints.
     if api_key_ids:
         session.exec(
-            delete(ApiKeyProject).where(
-                ApiKeyProject.api_key_id.in_(api_key_ids)
-            )
+            delete(ApiKeyProject).where(ApiKeyProject.api_key_id.in_(api_key_ids))
         )
     if ticket_ids:
         session.exec(
@@ -230,37 +220,33 @@ def purge_workspace(
                 | TicketDependency.depends_on_ticket_id.in_(ticket_ids)
             )
         )
-        session.exec(
-            delete(Comment).where(Comment.ticket_id.in_(ticket_ids))
-        )
-        session.exec(
-            delete(AuditLog).where(AuditLog.ticket_id.in_(ticket_ids))
-        )
+        session.exec(delete(Comment).where(Comment.ticket_id.in_(ticket_ids)))
+        session.exec(delete(AuditLog).where(AuditLog.ticket_id.in_(ticket_ids)))
     if node_ids:
         session.exec(
-            delete(KnowledgeProposal).where(
-                KnowledgeProposal.node_id.in_(node_ids)
-            )
+            delete(KnowledgeProposal).where(KnowledgeProposal.node_id.in_(node_ids))
         )
     if project_ids:
         session.exec(
-            delete(AgentSession).where(
-                AgentSession.project_id.in_(project_ids)
-            )
+            delete(AgentSession).where(AgentSession.project_id.in_(project_ids))
         )
     if ticket_ids:
         session.exec(delete(Ticket).where(Ticket.id.in_(ticket_ids)))
     if subproject_ids:
-        session.exec(
-            delete(Subproject).where(Subproject.id.in_(subproject_ids))
-        )
+        session.exec(delete(Subproject).where(Subproject.id.in_(subproject_ids)))
     if node_ids:
-        session.exec(
-            delete(KnowledgeNode).where(KnowledgeNode.id.in_(node_ids))
-        )
+        session.exec(delete(KnowledgeNode).where(KnowledgeNode.id.in_(node_ids)))
     if api_key_ids:
         session.exec(delete(ApiKey).where(ApiKey.id.in_(api_key_ids)))
     if project_ids:
+        for model in (ProjectInvitation, ProjectMembership):
+            count = len(
+                session.exec(
+                    select(model.id).where(model.project_id.in_(project_ids))
+                ).all()
+            )
+            deleted_records[model.__tablename__] = count
+            session.exec(delete(model).where(model.project_id.in_(project_ids)))
         session.exec(delete(Project).where(Project.id.in_(project_ids)))
     session.exec(
         delete(WorkspaceInvitation).where(
@@ -287,9 +273,7 @@ def purge_workspace(
     )
     session.flush()
     if session.get(Workspace, workspace_id) is not None:
-        raise RuntimeError(
-            f"Workspace {workspace_id} still exists after purge."
-        )
+        raise RuntimeError(f"Workspace {workspace_id} still exists after purge.")
     session.commit()
     return PurgeResult(
         workspace_id=workspace_id,
@@ -327,9 +311,7 @@ def purge_due_workspaces(
             for workspace in due
         ]
     if len(backup_evidence.strip()) < 8:
-        raise ValueError(
-            "Verified backup evidence is required before permanent purge."
-        )
+        raise ValueError("Verified backup evidence is required before permanent purge.")
     return [
         purge_workspace(
             session,
@@ -373,9 +355,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     json.dumps(
                         [
-                            asdict(result)
-                            if isinstance(result, PurgeResult)
-                            else result
+                            (
+                                asdict(result)
+                                if isinstance(result, PurgeResult)
+                                else result
+                            )
                             for result in results
                         ],
                         sort_keys=True,

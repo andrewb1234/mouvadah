@@ -619,3 +619,117 @@ def test_hosted_kill_switch_preserves_application(enforce_auth_client, monkeypat
         c.post("/oauth/register", json={"redirect_uris": [CALLBACK]}).status_code == 503
     )
     assert c.get("/healthz").status_code == 200
+
+
+def test_shared_project_oauth_and_api_keys_never_expand_to_workspace(
+    enforce_auth_client, engine, test_user
+):
+    from api.models.entities import ProjectMembership, WorkspaceMembership
+
+    c = enforce_auth_client
+    owner_workspace = login(c, engine, test_user)
+    with Session(engine) as session:
+        guest = User(
+            google_id="project-guest",
+            email="project-guest@example.com",
+            name="Project Guest",
+        )
+        session.add(guest)
+        session.flush()
+        shared = Project(name="Only shared", workspace_id=owner_workspace)
+        private = Project(name="Owner private", workspace_id=owner_workspace)
+        session.add_all([shared, private])
+        session.flush()
+        session.add(
+            ProjectMembership(
+                project_id=shared.id,
+                user_id=guest.id,
+                role="EDITOR",
+                created_by_user_id=test_user.id,
+            )
+        )
+        session.commit()
+        guest_id, shared_id, private_id = guest.id, shared.id, private.id
+    login(c, engine, guest)
+    registered = register(c)
+    consent_page = authorization(c, registered)
+    assert f"project:{shared_id}" in consent_page.text
+    assert f"project:{private_id}" not in consent_page.text
+    assert f"workspace:{owner_workspace}" not in consent_page.text
+    signed = html.unescape(
+        re.search(r'name="consent" value="([^"]+)"', consent_page.text)[1]
+    )
+    approved = c.post(
+        "/oauth/authorize",
+        data={
+            "consent": signed,
+            "target": f"project:{shared_id}",
+            "decision": "allow",
+            "access": "read write",
+        },
+        headers={"origin": ORIGIN},
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303, approved.text
+    code = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+    tokens = exchange(c, registered, code).json()
+    listed = rpc(
+        c,
+        tokens["access_token"],
+        "tools/call",
+        {"name": "get_all_projects", "arguments": {}},
+    )
+    assert "Only shared" in listed.text and "Owner private" not in listed.text
+    key = c.post(
+        "/api/v1/apikeys",
+        json={"name": "Guest project", "project_ids": [shared_id]},
+        headers={"origin": ORIGIN},
+    )
+    assert key.status_code == 200, key.text
+    raw = key.json()["key"]
+    c.cookies.clear()
+    listed = c.get("/api/v1/projects", headers={"Authorization": "Bearer " + raw})
+    assert listed.status_code == 200 and [p["id"] for p in listed.json()] == [shared_id]
+    assert (
+        c.get(
+            f"/api/v1/projects/{private_id}", headers={"Authorization": "Bearer " + raw}
+        ).status_code
+        == 404
+    )
+    assert (
+        c.post("/api/v1/auth/local-session", json={"api_key": raw}).status_code != 200
+    )
+    with Session(engine) as session:
+        assert (
+            session.exec(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == owner_workspace,
+                    WorkspaceMembership.user_id == guest_id,
+                )
+            ).first()
+            is None
+        )
+        membership = session.exec(
+            select(ProjectMembership).where(
+                ProjectMembership.project_id == shared_id,
+                ProjectMembership.user_id == guest_id,
+            )
+        ).one()
+        session.delete(membership)
+        session.commit()
+    assert (
+        c.get(
+            "/api/v1/projects", headers={"Authorization": "Bearer " + raw}
+        ).status_code
+        == 401
+    )
+    assert rpc(c, tokens["access_token"], "tools/list").status_code == 401
+    refreshed = c.post(
+        "/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": registered["client_id"],
+            "refresh_token": tokens["refresh_token"],
+        },
+    )
+    assert refreshed.status_code == 400

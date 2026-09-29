@@ -184,6 +184,14 @@ class ProjectRead(BaseModel):
     description: Optional[str] = None
     created_at: datetime
 
+    workspace_name: str = ""
+    access_source: str = "workspace"
+    effective_role: str = "VIEWER"
+    can_edit: bool = False
+    can_manage_access: bool = False
+    can_delete_project: bool = False
+    can_leave: bool = False
+
 
 class ControlRoomSubprojectRead(BaseModel):
     """The subproject fields needed to render the project Control Room."""
@@ -345,6 +353,8 @@ class CommentCreate(BaseModel):
 class CommentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
     id: int
     ticket_id: int
     author: ActorRole
@@ -358,6 +368,8 @@ class CommentRead(BaseModel):
 class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
     id: int
     ticket_id: int
     action: AuditAction
@@ -420,6 +432,8 @@ class KnowledgeNodeUpdate(BaseModel):
 class KnowledgeNodeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
     id: int
     project_id: int
     parent_id: Optional[int] = None
@@ -495,6 +509,8 @@ class KnowledgeProposalReview(BaseModel):
 class KnowledgeProposalRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
     id: int
     node_id: int
     proposed_by: str
@@ -529,6 +545,8 @@ class AgentSessionUpdate(BaseModel):
 class AgentSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
     id: int
     project_id: int
     intent: str

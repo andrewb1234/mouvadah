@@ -1,11 +1,6 @@
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-  Save,
-  Trash2,
-} from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Save, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TechnicalLabel } from "@/components/ui/technical-label";
-import { ApiError, deleteTicket, getTicket, updateTicket } from "@/lib/api";
+import {
+  ApiError,
+  deleteTicket,
+  getProject,
+  getTicket,
+  updateTicket,
+} from "@/lib/api";
 import { useAsync } from "@/hooks/useAsync";
 import { cn } from "@/lib/utils";
 import type { SSEPayload, TicketDetail } from "@/types";
@@ -31,13 +32,35 @@ interface Props {
 }
 
 export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
+  const { activeProjectId, refreshAccess } = useWorkspace();
   const isOpen = ticketId != null;
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [remoteUpdatePending, setRemoteUpdatePending] = useState(false);
   const ticket = useAsync<TicketDetail | null>(
-    () => (ticketId == null ? Promise.resolve(null) : getTicket(ticketId)),
-    [ticketId],
+    async () => {
+      if (ticketId == null) return null;
+      try {
+        return await getTicket(ticketId);
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          activeProjectId != null
+        ) {
+          // Retain a deleted ticket only while its enclosing project is still authorized.
+          try {
+            await getProject(activeProjectId);
+          } catch (accessError) {
+            refreshAccess();
+            throw accessError;
+          }
+        }
+        throw error;
+      }
+    },
+    [ticketId, activeProjectId],
+    { retainOnError: true },
   );
 
   useEffect(() => {
@@ -108,12 +131,11 @@ export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
         )}
         {!ticket.data && ticket.error && (
           <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-            <AlertCircle
-              className="h-6 w-6 text-destructive"
-              aria-hidden
-            />
+            <AlertCircle className="h-6 w-6 text-destructive" aria-hidden />
             <div>
-              <p className="text-sm font-semibold">Ticket could not be loaded</p>
+              <p className="text-sm font-semibold">
+                Ticket could not be loaded
+              </p>
               <p role="alert" className="mt-1 text-xs text-muted-foreground">
                 {ticket.error.message}
               </p>
@@ -172,6 +194,7 @@ function TicketBody({
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const { project } = useWorkspace();
   const [title, setTitle] = useState(ticket.title);
   const [description, setDescription] = useState(ticket.description ?? "");
   const [baseline, setBaseline] = useState({
@@ -182,7 +205,8 @@ function TicketBody({
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const dirty = title !== baseline.title || description !== baseline.description;
+  const dirty =
+    title !== baseline.title || description !== baseline.description;
 
   useEffect(() => {
     const next = {
@@ -270,6 +294,7 @@ function TicketBody({
             Ticket title
           </label>
           <Input
+            readOnly={!project?.can_edit}
             id={`ticket-${ticket.id}-title`}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -293,19 +318,24 @@ function TicketBody({
                   {remoteDeleted
                     ? "This ticket was deleted elsewhere"
                     : refetchError
-                    ? "Latest ticket state could not be refreshed"
-                    : "A remote ticket update is available"}
+                      ? "Latest ticket state could not be refreshed"
+                      : "A remote ticket update is available"}
                 </p>
                 <p className="mt-1 text-muted-foreground">
                   {remoteDeleted
                     ? "The safely loaded content remains visible for reference. Close this dialog to return to the updated board."
                     : refetchError
-                    ? refetchError
-                    : "Your local title and description remain intact. Save them before loading the remote revision."}
+                      ? refetchError
+                      : "Your local title and description remain intact. Save them before loading the remote revision."}
                 </p>
               </div>
               {remoteDeleted ? (
-                <Button type="button" variant="outline" size="sm" onClick={onClose}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onClose}
+                >
                   Close deleted ticket
                 </Button>
               ) : (
@@ -347,6 +377,7 @@ function TicketBody({
               Description
             </label>
             <Textarea
+              readOnly={!project?.can_edit}
               id={`ticket-${ticket.id}-description`}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
@@ -357,7 +388,9 @@ function TicketBody({
             <div className="sticky bottom-0 mt-3 flex items-center justify-end border-t border-border bg-card/95 py-3 backdrop-blur">
               <Button
                 size="sm"
-                disabled={!dirty || saving || !title.trim()}
+                disabled={
+                  !project?.can_edit || !dirty || saving || !title.trim()
+                }
                 onClick={() => void saveContent()}
               >
                 <Save className="mr-1 h-3.5 w-3.5" aria-hidden />
@@ -389,13 +422,14 @@ function TicketBody({
               Destructive action
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Deleting this ticket also removes its comments, audit history,
-              and dependency edges. This cannot be undone.
+              Deleting this ticket also removes its comments, audit history, and
+              dependency edges. This cannot be undone.
             </p>
             <Button
               size="sm"
               variant="outline"
               className="mt-3 border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={!project?.can_edit}
               onClick={() => void handleDelete()}
             >
               <Trash2 className="mr-1 h-3.5 w-3.5" aria-hidden />

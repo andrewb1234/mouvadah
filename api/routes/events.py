@@ -13,7 +13,8 @@ from sqlmodel import Session, select
 from api import database
 from api.auth import StreamCurrentUser
 from api.events import Event, ResyncSignal, get_broadcaster
-from api.models.entities import WorkspaceMembership
+from api.models.entities import WorkspaceMembership, Project, User, Workspace
+from api.authorization import project_access
 from api.observability import record_realtime_resync
 from api.security import get_api_key_authorization
 
@@ -36,6 +37,11 @@ def can_receive_event(
     event: Event,
 ) -> bool:
     """Return whether a caller currently belongs to an event's workspace."""
+    if event.recipient_user_id is not None:
+        return (
+            authorization.api_key_workspace_id is None
+            and authorization.user_id == event.recipient_user_id
+        )
     if event.workspace_id is None:
         return False
     if (
@@ -43,6 +49,17 @@ def can_receive_event(
         and authorization.api_key_workspace_id != event.workspace_id
     ):
         return False
+    workspace = session.get(Workspace, event.workspace_id)
+    if not workspace or workspace.deletion_requested_at is not None:
+        return False
+    if event.project_id is not None:
+        project = session.get(Project, event.project_id)
+        user = session.get(User, authorization.user_id)
+        if project and user:
+            return (
+                project.workspace_id == event.workspace_id
+                and project_access(session, user, project) is not None
+            )
     return (
         session.exec(
             select(WorkspaceMembership.id).where(
@@ -85,9 +102,7 @@ async def stream_events(
         )
     authorization = StreamAuthorization(
         user_id=user_id,
-        api_key_workspace_id=(
-            api_key.workspace_id if api_key is not None else None
-        ),
+        api_key_workspace_id=(api_key.workspace_id if api_key is not None else None),
     )
     broadcaster = get_broadcaster()
 

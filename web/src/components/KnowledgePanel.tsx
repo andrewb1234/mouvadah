@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -54,10 +55,7 @@ import type {
   KnowledgeProposal,
   SSEPayload,
 } from "@/types";
-import {
-  KNOWLEDGE_NODE_TYPE_LABELS,
-  KNOWLEDGE_NODE_TYPES,
-} from "@/types";
+import { KNOWLEDGE_NODE_TYPE_LABELS, KNOWLEDGE_NODE_TYPES } from "@/types";
 
 interface Props {
   projectId: number;
@@ -72,6 +70,7 @@ interface Props {
  * scannable without fighting the existing palette.
  */
 export function KnowledgePanel({ projectId, lastEvent }: Props) {
+  const { project } = useWorkspace();
   const nodes = useAsync<KnowledgeNode[]>(
     () => listKnowledgeNodesAll(projectId),
     [projectId],
@@ -249,8 +248,7 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
     () => ({
       current:
         nodes.data?.filter((node) => node.status === "CURRENT").length ?? 0,
-      stale:
-        nodes.data?.filter((node) => node.status === "STALE").length ?? 0,
+      stale: nodes.data?.filter((node) => node.status === "STALE").length ?? 0,
       archived:
         nodes.data?.filter((node) => node.status === "ARCHIVED").length ?? 0,
     }),
@@ -276,6 +274,7 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
           size="sm"
           variant="outline"
           className="h-7 px-2 text-xs"
+          disabled={!project?.can_edit}
           onClick={() => setCreatingUnder("root")}
         >
           <Plus className="mr-1 h-3 w-3" />
@@ -292,9 +291,7 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
           )}
           {nodes.error && (
             <div className="space-y-2 px-2 py-2" role="alert">
-              <p className="text-xs text-destructive">
-                {nodes.error.message}
-              </p>
+              <p className="text-xs text-destructive">{nodes.error.message}</p>
               <Button size="sm" variant="outline" onClick={nodes.refetch}>
                 Retry knowledge map
               </Button>
@@ -393,8 +390,8 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
               Knowledge workbench
             </h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              Trace durable decisions back to evidence, review proposed
-              changes, and load only the context an agent needs.
+              Trace durable decisions back to evidence, review proposed changes,
+              and load only the context an agent needs.
             </p>
           </div>
           <div
@@ -405,7 +402,10 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
               status="CURRENT"
               count={knowledgeCounts.current}
             />
-            <KnowledgeStatusBadge status="STALE" count={knowledgeCounts.stale} />
+            <KnowledgeStatusBadge
+              status="STALE"
+              count={knowledgeCounts.stale}
+            />
             <KnowledgeStatusBadge
               status="ARCHIVED"
               count={knowledgeCounts.archived}
@@ -495,6 +495,7 @@ function ContextTrailPanel({
   onSelectNode,
   onSaveCheckpoint,
 }: ContextTrailPanelProps) {
+  const { project } = useWorkspace();
   const hasTrail = trail !== null;
   return (
     <section className="border-b border-border bg-card/20 px-4 py-3">
@@ -540,7 +541,10 @@ function ContextTrailPanel({
             variant="outline"
             size="sm"
             disabled={
-              checkpointSaving || !trail || trail.load_order.length === 0
+              !project?.can_edit ||
+              checkpointSaving ||
+              !trail ||
+              trail.load_order.length === 0
             }
             onClick={onSaveCheckpoint}
           >
@@ -664,6 +668,7 @@ interface TreeBranchProps {
 }
 
 function TreeBranch(props: TreeBranchProps) {
+  const { project } = useWorkspace();
   const siblings = props.childrenByParent.get(props.parentId) ?? [];
   return (
     <ul
@@ -735,6 +740,7 @@ function TreeBranch(props: TreeBranchProps) {
                 type="button"
                 className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 aria-label={`Add child under ${node.title}`}
+                disabled={!project?.can_edit}
                 onClick={() => props.onStartCreate(node.id)}
               >
                 <Plus className="mx-auto h-3 w-3" />
@@ -743,7 +749,9 @@ function TreeBranch(props: TreeBranchProps) {
             {isExpanded && (
               <>
                 {props.creatingUnder === node.id && (
-                  <div style={{ marginLeft: `${(props.depth + 1) * 10 + 6}px` }}>
+                  <div
+                    style={{ marginLeft: `${(props.depth + 1) * 10 + 6}px` }}
+                  >
                     <NewNodeForm
                       projectId={props.projectId}
                       parentId={node.id}
@@ -800,7 +808,9 @@ function NewNodeForm({
       });
       onCreated(node);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Node creation failed.");
+      setError(
+        cause instanceof Error ? cause.message : "Node creation failed.",
+      );
     } finally {
       setSaving(false);
     }
@@ -882,6 +892,7 @@ function NodeEditor({
   onSelectNode,
   onDirtyChange,
 }: NodeEditorProps) {
+  const { project } = useWorkspace();
   const [title, setTitle] = useState(node.title);
   const [type, setType] = useState<KnowledgeNodeType>(node.node_type);
   const [content, setContent] = useState(node.content);
@@ -998,7 +1009,9 @@ function NodeEditor({
       await deleteKnowledgeNode(node.id);
       onDeleted();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Node deletion failed.");
+      setError(
+        cause instanceof Error ? cause.message : "Node deletion failed.",
+      );
     } finally {
       setDeleting(false);
     }
@@ -1048,12 +1061,14 @@ function NodeEditor({
               Node title
             </label>
             <Input
+              readOnly={!project?.can_edit}
               id={`knowledge-title-${node.id}`}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="h-8 flex-1 text-sm font-semibold"
             />
             <Select
+              disabled={!project?.can_edit}
               value={type}
               onValueChange={(v) => setType(v as KnowledgeNodeType)}
             >
@@ -1088,6 +1103,7 @@ function NodeEditor({
             <span>updated {formatWhen(node.updated_at)}</span>
             <span>·</span>
             <Select
+              disabled={!project?.can_edit}
               value={node.status ?? "CURRENT"}
               onValueChange={(v) => {
                 setError(null);
@@ -1123,7 +1139,7 @@ function NodeEditor({
             variant="ghost"
             size="sm"
             onClick={remove}
-            disabled={deleting || remoteDeleted}
+            disabled={!project?.can_edit || deleting || remoteDeleted}
             className="text-destructive"
           >
             <Trash2 className="mr-1 h-3.5 w-3.5" />
@@ -1132,7 +1148,13 @@ function NodeEditor({
           <Button
             size="sm"
             onClick={save}
-            disabled={!dirty || saving || Boolean(remoteUpdate) || remoteDeleted}
+            disabled={
+              !project?.can_edit ||
+              !dirty ||
+              saving ||
+              Boolean(remoteUpdate) ||
+              remoteDeleted
+            }
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {saving ? "Saving…" : "Save"}
@@ -1287,11 +1309,14 @@ function NodeEditor({
             Source references
           </label>
           <Textarea
+            readOnly={!project?.can_edit}
             id={`knowledge-source-refs-${node.id}`}
             value={sourceRefsText}
             onChange={(e) => setSourceRefsText(e.target.value)}
             rows={3}
-            placeholder={"/absolute/path/file.py\nhttps://example.com/doc\nnode:42"}
+            placeholder={
+              "/absolute/path/file.py\nhttps://example.com/doc\nnode:42"
+            }
             className="font-mono text-xs"
           />
           <p className="mt-1 text-[10px] text-muted-foreground">
@@ -1313,6 +1338,7 @@ function NodeEditor({
             Node content
           </label>
           <Textarea
+            readOnly={!project?.can_edit}
             id={`knowledge-content-${node.id}`}
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -1341,6 +1367,7 @@ function NodeEditor({
               Correction details
             </label>
             <Textarea
+              readOnly={!project?.can_edit}
               id={`correction-text-${node.id}`}
               value={correctionText}
               onChange={(e) => setCorrectionText(e.target.value)}
@@ -1354,7 +1381,9 @@ function NodeEditor({
               variant="outline"
               className="self-start"
               onClick={requestCorrection}
-              disabled={!correctionText.trim() || correctionSaving}
+              disabled={
+                !project?.can_edit || !correctionText.trim() || correctionSaving
+              }
             >
               {correctionSaving ? "Saving…" : "Request update"}
             </Button>
@@ -1380,7 +1409,12 @@ function NodeEditor({
           <Button
             size="sm"
             onClick={save}
-            disabled={saving || Boolean(remoteUpdate) || remoteDeleted}
+            disabled={
+              !project?.can_edit ||
+              saving ||
+              Boolean(remoteUpdate) ||
+              remoteDeleted
+            }
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {saving ? "Saving…" : "Save"}
@@ -1402,6 +1436,7 @@ function ProposalsSection({
   lastEvent: SSEPayload | null;
   onAccepted: () => void;
 }) {
+  const { project } = useWorkspace();
   const [proposals, setProposals] = useState<KnowledgeProposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<number | null>(null);
@@ -1506,7 +1541,7 @@ function ProposalsSection({
                 size="sm"
                 variant="outline"
                 className="h-6 px-2 text-xs text-destructive hover:bg-destructive/20"
-                disabled={reviewing === p.id}
+                disabled={!project?.can_edit || reviewing === p.id}
                 onClick={() => void handleReview(p.id, "reject")}
               >
                 <X className="mr-1 h-3 w-3" />
@@ -1515,7 +1550,7 @@ function ProposalsSection({
               <Button
                 size="sm"
                 className="h-6 px-2 text-[10px]"
-                disabled={reviewing === p.id}
+                disabled={!project?.can_edit || reviewing === p.id}
                 onClick={() => void handleReview(p.id, "accept")}
               >
                 <Check className="mr-1 h-3 w-3" />

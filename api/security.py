@@ -36,6 +36,7 @@ class ApiKeyAuthorization:
     workspace_id: int
     scopes: frozenset[str]
     project_ids: frozenset[int]
+    resource_mode: str = "WORKSPACE"
 
 
 _api_key_authorization: ContextVar[ApiKeyAuthorization | None] = ContextVar(

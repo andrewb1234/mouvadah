@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { useState } from "react";
 import { AlertCircle, Bot, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ export function CommentThread({
   onPosted,
   headingId,
 }: Props) {
+  const { project } = useWorkspace();
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,15 +49,11 @@ export function CommentThread({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3">
-        <h3
-          id={headingId}
-          className="text-sm font-semibold tracking-tight"
-        >
+        <h3 id={headingId} className="text-sm font-semibold tracking-tight">
           Human + agent discussion
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Decisions and implementation handoffs stay attached to this work
-          item.
+          Decisions and implementation handoffs stay attached to this work item.
         </p>
       </div>
       <ol
@@ -88,7 +86,11 @@ export function CommentThread({
             <div className="min-w-0 flex-1 border border-border bg-background/70 px-3 py-2 text-xs">
               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                 <strong>
-                  {comment.author === "AGENT" ? "Agent" : "Human"}
+                  {comment.actor_name
+                    ? `${comment.actor_name}${comment.author === "AGENT" ? "’s agent" : ""}`
+                    : comment.author === "AGENT"
+                      ? "Agent"
+                      : "Human"}
                 </strong>
                 <time
                   className="font-mono text-[11px] text-muted-foreground"
@@ -105,56 +107,58 @@ export function CommentThread({
         ))}
       </ol>
 
-      <form onSubmit={submit} className="mt-4">
-        <label
-          htmlFor={`ticket-${ticketId}-comment`}
-          className="text-xs font-semibold"
-        >
-          Add a human comment
-        </label>
-        <div className="mt-1 flex items-end gap-2">
-          <Textarea
-            id={`ticket-${ticketId}-comment`}
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            placeholder="Write a comment as Human…"
-            rows={3}
-            className="min-h-20"
-            aria-describedby={`ticket-${ticketId}-comment-help`}
-            aria-invalid={error ? true : undefined}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                void submit(event);
-              }
-            }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            className="h-11 w-11 shrink-0"
-            disabled={saving || !content.trim()}
-            aria-label={saving ? "Posting comment" : "Post comment"}
+      {project?.can_edit && (
+        <form onSubmit={submit} className="mt-4">
+          <label
+            htmlFor={`ticket-${ticketId}-comment`}
+            className="text-xs font-semibold"
           >
-            <Send className="h-4 w-4" aria-hidden />
-          </Button>
-        </div>
-        <p
-          id={`ticket-${ticketId}-comment-help`}
-          className="mt-1 text-[11px] text-muted-foreground"
-        >
-          Press {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} + Enter to
-          post.
-        </p>
-        {error && (
+            Add a human comment
+          </label>
+          <div className="mt-1 flex items-end gap-2">
+            <Textarea
+              id={`ticket-${ticketId}-comment`}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Write a comment as Human…"
+              rows={3}
+              className="min-h-20"
+              aria-describedby={`ticket-${ticketId}-comment-help`}
+              aria-invalid={error ? true : undefined}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  void submit(event);
+                }
+              }}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              disabled={saving || !content.trim()}
+              aria-label={saving ? "Posting comment" : "Post comment"}
+            >
+              <Send className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
           <p
-            role="alert"
-            className="mt-2 flex items-center gap-2 text-xs text-destructive"
+            id={`ticket-${ticketId}-comment-help`}
+            className="mt-1 text-[11px] text-muted-foreground"
           >
-            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
-            {error}
+            Press {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} + Enter to
+            post.
           </p>
-        )}
-      </form>
+          {error && (
+            <p
+              role="alert"
+              className="mt-2 flex items-center gap-2 text-xs text-destructive"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+              {error}
+            </p>
+          )}
+        </form>
+      )}
     </div>
   );
 }

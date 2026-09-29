@@ -8,6 +8,7 @@ these helpers decide whether that caller can access the requested object.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -19,6 +20,7 @@ from api.models.entities import (
     KnowledgeNode,
     KnowledgeProposal,
     Project,
+    ProjectMembership,
     Subproject,
     Ticket,
     User,
@@ -107,9 +109,7 @@ def require_workspace(
         )
     if lock or write:
         workspace_query = workspace_query.with_for_update()
-    workspace_query = workspace_query.execution_options(
-        populate_existing=True
-    )
+    workspace_query = workspace_query.execution_options(populate_existing=True)
     workspace = session.exec(workspace_query).first()
     if workspace is None:
         raise _not_found("Workspace")
@@ -161,19 +161,12 @@ def ensure_personal_workspace(session: Session, user: User) -> Workspace:
     # user. Unowned projects otherwise remain inaccessible instead of leaking.
     settings = get_settings()
     users = list(session.exec(select(User.id)).all())
-    may_adopt = (
-        settings.legacy_owner_email == user.email
-        or (
-            not settings.is_production()
-            and len(users) == 1
-            and users[0] == user.id
-        )
+    may_adopt = settings.legacy_owner_email == user.email or (
+        not settings.is_production() and len(users) == 1 and users[0] == user.id
     )
     if may_adopt:
         legacy = list(
-            session.exec(
-                select(Project).where(Project.workspace_id.is_(None))
-            ).all()
+            session.exec(select(Project).where(Project.workspace_id.is_(None))).all()
         )
         for project in legacy:
             project.workspace_id = workspace.id
@@ -183,6 +176,91 @@ def ensure_personal_workspace(session: Session, user: User) -> Workspace:
     return workspace
 
 
+@dataclass(frozen=True)
+class ProjectAccess:
+    can_edit: bool
+    can_manage_access: bool
+    can_delete_project: bool
+    can_leave: bool
+    access_source: str
+    effective_role: str
+
+
+def project_access(
+    session: Session, user: User, project: Project
+) -> ProjectAccess | None:
+    inherited = get_membership(session, user, project.workspace_id)
+    direct = session.exec(
+        select(ProjectMembership)
+        .where(
+            ProjectMembership.project_id == project.id,
+            ProjectMembership.user_id == user.id,
+        )
+        .execution_options(populate_existing=True)
+    ).first()
+    if inherited is None and direct is None:
+        return None
+    role = _coerce_role(inherited.role) if inherited else None
+    admin = role in _ADMIN_ROLES
+    edit = role in _WRITE_ROLES or (direct is not None and direct.role == "EDITOR")
+    return ProjectAccess(
+        can_edit=edit,
+        can_manage_access=admin,
+        can_delete_project=admin,
+        can_leave=direct is not None,
+        access_source="workspace" if inherited else "project",
+        effective_role="ADMIN" if admin else "EDITOR" if edit else "VIEWER",
+    )
+
+
+def accessible_projects_query(user: User):
+    inherited = (
+        select(WorkspaceMembership.id)
+        .where(
+            WorkspaceMembership.workspace_id == Project.workspace_id,
+            WorkspaceMembership.user_id == user.id,
+        )
+        .exists()
+    )
+    direct = (
+        select(ProjectMembership.id)
+        .where(
+            ProjectMembership.project_id == Project.id,
+            ProjectMembership.user_id == user.id,
+        )
+        .exists()
+    )
+    query = (
+        select(Project)
+        .join(Workspace)
+        .where(
+            Workspace.deletion_requested_at.is_(None),
+            inherited | direct,
+        )
+        .order_by(Project.created_at)
+    )
+    key = get_api_key_authorization()
+    if key is not None:
+        query = query.where(Project.workspace_id == key.workspace_id)
+        if key.resource_mode == "PROJECTS" or key.project_ids:
+            query = query.where(Project.id.in_(key.project_ids))
+    return query
+
+
+def project_read(session: Session, user: User, project: Project):
+    from api.schemas import ProjectRead
+
+    access = project_access(session, user, project)
+    if access is None:
+        raise _not_found("Project")
+    workspace = session.get(Workspace, project.workspace_id)
+    return ProjectRead(
+        **project.model_dump(),
+        **access.__dict__,
+        workspace_name=workspace.name,
+    )
+
+
 def require_project(
     session: Session,
     user: User,
@@ -190,13 +268,11 @@ def require_project(
     *,
     write: bool = False,
     admin: bool = False,
+    lock: bool = False,
 ) -> Project:
     project = session.exec(
         select(Project)
-        .join(
-            Workspace,
-            Workspace.id == Project.workspace_id,  # type: ignore[arg-type]
-        )
+        .join(Workspace)
         .where(
             Project.id == project_id,
             Workspace.deletion_requested_at.is_(None),
@@ -205,25 +281,28 @@ def require_project(
     ).first()
     if project is None or project.workspace_id is None:
         raise _not_found("Project")
-    preflight_membership = get_membership(
-        session,
-        user,
-        project.workspace_id,
-    )
-    _check_role(
-        preflight_membership,
-        write=write,
-        admin=admin,
-        label="Project",
-    )
-    api_key = get_api_key_authorization()
-    if api_key is not None:
-        if api_key.workspace_id != project.workspace_id:
+
+    def check():
+        access = project_access(session, user, project)
+        if (
+            access is None
+            or (write and not access.can_edit)
+            or (admin and not access.can_manage_access)
+        ):
             raise _not_found("Project")
-        if api_key.project_ids and project.id not in api_key.project_ids:
+        key = get_api_key_authorization()
+        if key is not None and (
+            key.workspace_id != project.workspace_id
+            or (
+                (key.resource_mode == "PROJECTS" or key.project_ids)
+                and project.id not in key.project_ids
+            )
+        ):
             raise _not_found("Project")
-    if write or admin:
-        locked_workspace = session.exec(
+
+    check()
+    if write or admin or lock:
+        workspace = session.exec(
             select(Workspace)
             .where(
                 Workspace.id == project.workspace_id,
@@ -232,14 +311,16 @@ def require_project(
             .with_for_update()
             .execution_options(populate_existing=True)
         ).first()
-        if locked_workspace is None:
+        if workspace is None:
             raise _not_found("Project")
-    membership = get_membership(
-        session,
-        user,
-        project.workspace_id,
-    )
-    _check_role(membership, write=write, admin=admin, label="Project")
+        project = session.exec(
+            select(Project)
+            .where(Project.id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if project is None:
+            raise _not_found("Project")
+        check()
     return project
 
 
@@ -363,6 +444,16 @@ def workspace_id_for_project(session: Session, project_id: int) -> int:
     return workspace_id
 
 
+def project_id_for_subproject(session: Session, subproject_id: int) -> int:
+    """Resolve the project using the caller's already-authorized transaction."""
+    project_id = session.exec(
+        select(Subproject.project_id).where(Subproject.id == subproject_id)
+    ).first()
+    if project_id is None:
+        raise RuntimeError(f"Subproject {subproject_id} has no project ownership.")
+    return project_id
+
+
 def workspace_id_for_subproject(session: Session, subproject_id: int) -> int:
     """Resolve the workspace for an already-authorized subproject."""
     workspace_id = session.exec(
@@ -374,9 +465,7 @@ def workspace_id_for_subproject(session: Session, subproject_id: int) -> int:
         .where(Subproject.id == subproject_id)
     ).first()
     if workspace_id is None:
-        raise RuntimeError(
-            f"Subproject {subproject_id} has no workspace ownership."
-        )
+        raise RuntimeError(f"Subproject {subproject_id} has no workspace ownership.")
     return workspace_id
 
 

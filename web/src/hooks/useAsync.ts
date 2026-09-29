@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface AsyncState<T> {
@@ -127,7 +128,11 @@ export function clearAsyncCache(): void {
 export function useAsync<T>(
   fetcher: () => Promise<T>,
   deps: ReadonlyArray<unknown>,
-  options: { cacheKey?: string; staleTimeMs?: number } = {},
+  options: {
+    cacheKey?: string;
+    staleTimeMs?: number;
+    retainOnError?: boolean;
+  } = {},
 ): AsyncState<T> & { refetch: () => void } {
   const [state, setState] = useState<AsyncState<T>>({
     data: undefined,
@@ -137,37 +142,47 @@ export function useAsync<T>(
 
   const latestRunId = useRef(0);
 
-  const load = useCallback((force: boolean) => {
-    const runId = ++latestRunId.current;
-    const cached = options.cacheKey ? readCache<T>(options.cacheKey) : undefined;
-    setState((prev) => ({
-      data: cached?.data ?? prev.data,
-      loading: true,
-      error: null,
-    }));
-    const request = options.cacheKey
-      ? fetchCached(
-          options.cacheKey,
-          fetcher,
-          force,
-          options.staleTimeMs ?? DEFAULT_CACHE_STALE_MS,
-        )
-      : Promise.resolve().then(fetcher);
-    request
-      .then((data) => {
-        if (runId !== latestRunId.current) return;
-        setState({ data, loading: false, error: null });
-      })
-      .catch((err: unknown) => {
-        if (runId !== latestRunId.current) return;
-        setState((previous) => ({
-          ...previous,
-          loading: false,
-          error: err instanceof Error ? err : new Error(String(err)),
-        }));
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.cacheKey, options.staleTimeMs, ...deps]);
+  const load = useCallback(
+    (force: boolean) => {
+      const runId = ++latestRunId.current;
+      const cached = options.cacheKey
+        ? readCache<T>(options.cacheKey)
+        : undefined;
+      setState((prev) => ({
+        data: cached?.data ?? prev.data,
+        loading: true,
+        error: null,
+      }));
+      const request = options.cacheKey
+        ? fetchCached(
+            options.cacheKey,
+            fetcher,
+            force,
+            options.staleTimeMs ?? DEFAULT_CACHE_STALE_MS,
+          )
+        : Promise.resolve().then(fetcher);
+      request
+        .then((data) => {
+          if (runId !== latestRunId.current) return;
+          setState({ data, loading: false, error: null });
+        })
+        .catch((err: unknown) => {
+          if (runId !== latestRunId.current) return;
+          setState((previous) => ({
+            ...previous,
+            data:
+              options.retainOnError &&
+              !(err instanceof ApiError && [401, 403].includes(err.status))
+                ? previous.data
+                : undefined,
+            loading: false,
+            error: err instanceof Error ? err : new Error(String(err)),
+          }));
+        });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [options.cacheKey, options.staleTimeMs, options.retainOnError, ...deps],
+  );
 
   const refetch = useCallback(() => {
     load(true);
@@ -175,6 +190,9 @@ export function useAsync<T>(
 
   useEffect(() => {
     load(false);
+    return () => {
+      latestRunId.current++;
+    };
   }, [load]);
 
   return { ...state, refetch };

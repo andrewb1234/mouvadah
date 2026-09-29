@@ -13,7 +13,17 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, Column, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
@@ -35,6 +45,8 @@ from api.utils.time import utcnow
 class AgentSession(SQLModel, table=True):
     """Records an agent work session for handoff and audit purposes."""
 
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_name: Optional[str] = Field(default=None)
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     intent: str = Field(default="")
@@ -72,8 +84,7 @@ class Workspace(SQLModel, table=True):
             name="ck_workspace_purge_after_request",
         ),
         CheckConstraint(
-            "deletion_export_sha256 IS NULL "
-            "OR length(deletion_export_sha256) = 64",
+            "deletion_export_sha256 IS NULL " "OR length(deletion_export_sha256) = 64",
             name="ck_workspace_deletion_export_sha256",
         ),
     )
@@ -326,12 +337,16 @@ class TicketDependency(SQLModel, table=True):
     """
 
     ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
-    depends_on_ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
+    depends_on_ticket_id: int = Field(
+        foreign_key="ticket.id", primary_key=True, index=True
+    )
 
 
 class Comment(SQLModel, table=True):
     """Threaded discussion attached to a ticket."""
 
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_name: Optional[str] = Field(default=None)
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     author: ActorRole
@@ -348,6 +363,8 @@ class AuditLog(SQLModel, table=True):
     cheap to write. If we need before/after values later, extend here.
     """
 
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_name: Optional[str] = Field(default=None)
     id: Optional[int] = Field(default=None, primary_key=True)
     ticket_id: int = Field(foreign_key="ticket.id", index=True)
     action: AuditAction
@@ -370,6 +387,8 @@ class KnowledgeNode(SQLModel, table=True):
     to its origin without the agent having to re-read the raw content.
     """
 
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_name: Optional[str] = Field(default=None)
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     parent_id: Optional[int] = Field(
@@ -379,7 +398,8 @@ class KnowledgeNode(SQLModel, table=True):
     title: str
     node_type: KnowledgeNodeType = Field(default=KnowledgeNodeType.RAW)
     status: KnowledgeNodeStatus = Field(
-        default=KnowledgeNodeStatus.CURRENT, sa_column=Column(String, nullable=False, default="CURRENT")
+        default=KnowledgeNodeStatus.CURRENT,
+        sa_column=Column(String, nullable=False, default="CURRENT"),
     )
     superseded_by: Optional[int] = Field(
         default=None, foreign_key="knowledgenode.id", index=True
@@ -395,11 +415,17 @@ class KnowledgeNode(SQLModel, table=True):
     project: Optional[Project] = Relationship(back_populates="knowledge_nodes")
     parent: Optional["KnowledgeNode"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "KnowledgeNode.id", "foreign_keys": "[KnowledgeNode.parent_id]"},
+        sa_relationship_kwargs={
+            "remote_side": "KnowledgeNode.id",
+            "foreign_keys": "[KnowledgeNode.parent_id]",
+        },
     )
     children: List["KnowledgeNode"] = Relationship(
         back_populates="parent",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan", "foreign_keys": "[KnowledgeNode.parent_id]"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[KnowledgeNode.parent_id]",
+        },
     )
     proposals: List["KnowledgeProposal"] = Relationship(
         back_populates="node",
@@ -446,8 +472,8 @@ class ApiKey(SQLModel, table=True):
     - ``key_hash`` (SHA-256 of the full key) for lookup/verification
 
     ``workspace_id`` is nullable only for migrated ambiguous legacy keys, which
-    authentication rejects. New keys always bind to one workspace. An empty
-    ``ApiKeyProject`` set means every project in that workspace is allowed.
+    authentication rejects. New keys always bind to one workspace. Explicit
+    PROJECTS mode denies access when its ``ApiKeyProject`` set becomes empty.
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -456,6 +482,10 @@ class ApiKey(SQLModel, table=True):
         default=None,
         foreign_key="workspace.id",
         index=True,
+    )
+    resource_mode: str = Field(
+        default="WORKSPACE",
+        sa_column=Column(String, nullable=False, server_default="WORKSPACE"),
     )
     name: str = Field(default="Default")
     key_prefix: str = Field(index=True)
@@ -491,6 +521,8 @@ class ApiKeyProject(SQLModel, table=True):
 class KnowledgeProposal(SQLModel, table=True):
     """Agent-submitted proposed change to a knowledge node, pending human review."""
 
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    actor_name: Optional[str] = Field(default=None)
     id: Optional[int] = Field(default=None, primary_key=True)
     node_id: int = Field(foreign_key="knowledgenode.id", index=True)
     proposed_by: str = Field(default="AGENT")
@@ -508,6 +540,7 @@ class KnowledgeProposal(SQLModel, table=True):
 
 class McpOAuthClient(SQLModel, table=True):
     """Registered OAuth client metadata; client secrets are hashed."""
+
     id: str = Field(primary_key=True)
     secret_hash: Optional[str] = None
     metadata_json: dict = Field(sa_column=Column(JSON, nullable=False))
@@ -516,9 +549,14 @@ class McpOAuthClient(SQLModel, table=True):
 
 class McpOAuthCode(SQLModel, table=True):
     """Short-lived, single-use PKCE authorization code."""
+
     code_hash: str = Field(primary_key=True)
     client_id: str
-    api_key_id: int = Field(sa_column=Column(Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False))
+    api_key_id: int = Field(
+        sa_column=Column(
+            Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False
+        )
+    )
     redirect_uri: str
     challenge: str
     resource: str
@@ -528,11 +566,84 @@ class McpOAuthCode(SQLModel, table=True):
 
 class McpOAuthToken(SQLModel, table=True):
     """Hashed, audience-bound access/refresh tokens sharing a revocable grant."""
+
     token_hash: str = Field(primary_key=True)
     client_id: str
-    api_key_id: int = Field(sa_column=Column(Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False))
+    api_key_id: int = Field(
+        sa_column=Column(
+            Integer, ForeignKey("apikey.id", ondelete="CASCADE"), nullable=False
+        )
+    )
     kind: str
     resource: str
     scopes: List[str] = Field(sa_column=Column(JSON, nullable=False))
     expires_at: datetime
     used: bool = False
+
+
+class ProjectMembership(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_member"),
+        CheckConstraint("role IN ('VIEWER', 'EDITOR')", name="ck_project_member_role"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("project.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_id: int = Field(foreign_key="user.id", index=True)
+    role: str = Field(default="EDITOR")
+    created_by_user_id: int = Field(foreign_key="user.id")
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+
+class ProjectInvitation(SQLModel, table=True):
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('VIEWER', 'EDITOR')", name="ck_project_invitation_role"
+        ),
+        CheckConstraint("length(token_hash) = 64", name="ck_project_invitation_hash"),
+        CheckConstraint("expires_at > created_at", name="ck_project_invitation_expiry"),
+        CheckConstraint(
+            "NOT (accepted_at IS NOT NULL AND revoked_at IS NOT NULL)",
+            name="ck_project_invitation_terminal",
+        ),
+        CheckConstraint(
+            "(accepted_at IS NULL AND accepted_by_user_id IS NULL) OR (accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL)",
+            name="ck_project_invitation_acceptance",
+        ),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("project.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    email: str = Field(index=True)
+    role: str = Field(default="EDITOR")
+    token_hash: str = Field(unique=True, index=True)
+    created_by_user_id: int = Field(foreign_key="user.id")
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    accepted_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    revoked_at: Optional[datetime] = None
+
+
+class ProjectAccessEvent(SQLModel, table=True):
+    """Non-content ledger retained after project deletion."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True)
+    workspace_id: int = Field(index=True)
+    actor_user_id: int
+    subject_user_id: Optional[int] = None
+    action: str
+    occurred_at: datetime = Field(default_factory=utcnow, nullable=False)

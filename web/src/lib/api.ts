@@ -19,6 +19,9 @@ import type {
   KnowledgeNodeType,
   KnowledgeProposal,
   Project,
+  ProjectMember,
+  ProjectInvitation,
+  ProjectInvitationPreview,
   Subproject,
   SubprojectDetail,
   Ticket,
@@ -48,10 +51,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",
@@ -83,9 +83,7 @@ export const listWorkspaceMembers = (workspaceId: number) =>
   request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
 
 export const listWorkspaceInvitations = (workspaceId: number) =>
-  request<WorkspaceInvitation[]>(
-    `/workspaces/${workspaceId}/invitations`,
-  );
+  request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`);
 
 export const createWorkspaceInvitation = (
   workspaceId: number,
@@ -107,10 +105,9 @@ export const revokeWorkspaceInvitation = (
   workspaceId: number,
   invitationId: number,
 ) =>
-  request<void>(
-    `/workspaces/${workspaceId}/invitations/${invitationId}`,
-    { method: "DELETE" },
-  );
+  request<void>(`/workspaces/${workspaceId}/invitations/${invitationId}`, {
+    method: "DELETE",
+  });
 
 export const acceptWorkspaceInvitation = (token: string) =>
   request<Workspace>("/workspaces/invitations/accept", {
@@ -131,10 +128,7 @@ export const updateWorkspaceMemberRole = (
     },
   );
 
-export const removeWorkspaceMember = (
-  workspaceId: number,
-  userId: number,
-) =>
+export const removeWorkspaceMember = (workspaceId: number, userId: number) =>
   request<WorkspaceMembershipMutation>(
     `/workspaces/${workspaceId}/members/${userId}`,
     { method: "DELETE" },
@@ -218,7 +212,6 @@ export const restoreWorkspace = (workspaceId: number) =>
     method: "POST",
   });
 
-export const getProject = (id: number) => request<Project>(`/projects/${id}`);
 export const getControlRoomSummary = (projectId: number) =>
   request<ControlRoomSummary>(`/projects/${projectId}/control-room`);
 export const listProjectTickets = (projectId: number) =>
@@ -325,7 +318,10 @@ export const heartbeatTicket = (
 ) =>
   request<Ticket>(`/tickets/${id}/heartbeat`, {
     method: "POST",
-    body: JSON.stringify({ worker_id: workerId, extend_seconds: extendSeconds }),
+    body: JSON.stringify({
+      worker_id: workerId,
+      extend_seconds: extendSeconds,
+    }),
   });
 
 export const requeueExpired = (subprojectId: number) =>
@@ -338,11 +334,7 @@ export const requeueExpired = (subprojectId: number) =>
 export const listKnowledgeNodes = (projectId: number) =>
   request<KnowledgeNode[]>(`/projects/${projectId}/knowledge`);
 
-export const getContextTrail = (
-  projectId: number,
-  query: string,
-  limit = 6,
-) =>
+export const getContextTrail = (projectId: number, query: string, limit = 6) =>
   request<ContextTrail>(
     `/projects/${projectId}/knowledge/context-trail?query=${encodeURIComponent(query)}&limit=${limit}`,
   );
@@ -366,7 +358,9 @@ export const createKnowledgeNode = (
   });
 
 export const listKnowledgeNodesAll = (projectId: number) =>
-  request<KnowledgeNode[]>(`/projects/${projectId}/knowledge?include_stale=true`);
+  request<KnowledgeNode[]>(
+    `/projects/${projectId}/knowledge?include_stale=true`,
+  );
 
 export const updateKnowledgeNode = (
   id: number,
@@ -434,7 +428,11 @@ export const listSessions = (projectId: number) =>
 
 export const updateSession = (
   sessionId: number,
-  payload: Partial<{ handoff_note: string; status: string; loaded_node_ids: number[] }>,
+  payload: Partial<{
+    handoff_note: string;
+    status: string;
+    loaded_node_ids: number[];
+  }>,
 ) =>
   request<AgentSession>(`/agent/sessions/${sessionId}`, {
     method: "PATCH",
@@ -470,8 +468,7 @@ export interface AuthProviders {
 
 export const getMe = () => request<AuthUser>("/auth/me");
 
-export const getAuthProviders = () =>
-  request<AuthProviders>("/auth/providers");
+export const getAuthProviders = () => request<AuthProviders>("/auth/providers");
 
 export const createLocalSession = (apiKey: string) =>
   request<void>("/auth/local-session", {
@@ -479,8 +476,7 @@ export const createLocalSession = (apiKey: string) =>
     body: JSON.stringify({ api_key: apiKey }),
   });
 
-export const logout = () =>
-  request<void>("/auth/logout", { method: "POST" });
+export const logout = () => request<void>("/auth/logout", { method: "POST" });
 
 export const listBrowserSessions = () =>
   request<BrowserSession[]>("/auth/sessions");
@@ -510,3 +506,47 @@ export const createApiKey = (payload: {
 
 export const revokeApiKey = (id: number) =>
   request<void>(`/apikeys/${id}`, { method: "DELETE" });
+
+// Project-only sharing. Invitation links are returned once and never cached.
+export const listProjectMembers = (id: number) =>
+  request<ProjectMember[]>(`/projects/${id}/members`);
+export const listProjectInvitations = (id: number) =>
+  request<ProjectInvitation[]>(`/projects/${id}/invitations`);
+export const createProjectInvitation = (
+  id: number,
+  email: string,
+  role: "EDITOR" | "VIEWER",
+) =>
+  request<ProjectInvitation & { accept_url: string }>(
+    `/projects/${id}/invitations`,
+    { method: "POST", body: JSON.stringify({ email, role }) },
+  );
+export const revokeProjectInvitation = (id: number, invitation: number) =>
+  request<void>(`/projects/${id}/invitations/${invitation}`, {
+    method: "DELETE",
+  });
+export const updateProjectMember = (
+  id: number,
+  user: number,
+  role: "EDITOR" | "VIEWER",
+) =>
+  request<void>(`/projects/${id}/members/${user}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+export const removeProjectMember = (id: number, user: number) =>
+  request<void>(`/projects/${id}/members/${user}`, { method: "DELETE" });
+export const leaveProject = (id: number) =>
+  request<void>(`/projects/${id}/membership`, { method: "DELETE" });
+export const previewProjectInvitation = (token: string) =>
+  request<ProjectInvitationPreview>("/project-invitations/preview", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+export const acceptProjectInvitation = (token: string) =>
+  request<Project>("/project-invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+
+export const getProject = (id: number) => request<Project>(`/projects/${id}`);

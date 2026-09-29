@@ -19,7 +19,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 
-from api.api_keys import hash_api_key
+from api.api_keys import hash_api_key, key_has_current_access
 from api.dependencies import FunctionSessionDep, SessionDep, SettingsDep
 from api.models.entities import (
     ApiKey,
@@ -130,13 +130,7 @@ def _verify_api_key_record(
     user = session.get(User, api_key.user_id)
     if user is None:
         return None
-    membership = session.exec(
-        select(WorkspaceMembership.id).where(
-            WorkspaceMembership.workspace_id == api_key.workspace_id,
-            WorkspaceMembership.user_id == user.id,
-        )
-    ).first()
-    if membership is None:
+    if not key_has_current_access(session, api_key):
         return None
     project_ids = frozenset(
         session.exec(
@@ -162,7 +156,11 @@ def verify_api_key(raw_key: str, session: Session) -> User | None:
     if verified is None:
         return None
     user, api_key, project_ids = verified
-    if not {READ_SCOPE, WRITE_SCOPE}.issubset(api_key.scopes) or project_ids:
+    if (
+        not {READ_SCOPE, WRITE_SCOPE}.issubset(api_key.scopes)
+        or project_ids
+        or api_key.resource_mode == "PROJECTS"
+    ):
         return None
     return user
 
@@ -220,6 +218,7 @@ async def get_current_user(
                     workspace_id=api_key.workspace_id,
                     scopes=scopes,
                     project_ids=project_ids,
+                    resource_mode=api_key.resource_mode,
                 )
             )
             request.state.auth_method = "api_key"

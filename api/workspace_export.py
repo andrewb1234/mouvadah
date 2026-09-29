@@ -17,6 +17,9 @@ from api.models.entities import (
     KnowledgeNode,
     KnowledgeProposal,
     Project,
+    ProjectMembership,
+    ProjectInvitation,
+    ProjectAccessEvent,
     Subproject,
     Ticket,
     TicketDependency,
@@ -94,9 +97,7 @@ def build_workspace_export(
         if project_ids
         else []
     )
-    subproject_ids = [
-        row.id for row in subprojects if row.id is not None
-    ]
+    subproject_ids = [row.id for row in subprojects if row.id is not None]
     tickets = (
         list(
             session.exec(
@@ -159,9 +160,7 @@ def build_workspace_export(
         if project_ids
         else []
     )
-    node_ids = [
-        row.id for row in knowledge_nodes if row.id is not None
-    ]
+    node_ids = [row.id for row in knowledge_nodes if row.id is not None]
     proposals = (
         list(
             session.exec(
@@ -254,6 +253,22 @@ def build_workspace_export(
         "api_key_projects": _dump_rows(api_key_projects),
         "workspace_lifecycle_events": _dump_rows(lifecycle_events),
     }
+    for model in (ProjectMembership, ProjectInvitation, ProjectAccessEvent):
+        rows = list(
+            session.exec(
+                select(model)
+                .where(model.project_id.in_(project_ids))
+                .order_by(model.id)
+            ).all()
+        )
+        tables[model.__tablename__] = _dump_rows(rows, exclude={"token_hash"})
+    participant_ids = {row["user_id"] for row in tables["projectmembership"]}
+    tables["project_participants"] = [
+        {"id": person.id, "name": person.name}
+        for person in session.exec(
+            select(User).where(User.id.in_(participant_ids)).order_by(User.id)
+        ).all()
+    ]
     counts = {name: len(rows) for name, rows in tables.items()}
     payload = {
         "format": EXPORT_FORMAT,

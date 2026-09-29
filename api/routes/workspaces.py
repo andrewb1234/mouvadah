@@ -15,12 +15,16 @@ from api.auth import CurrentUser
 from api.config import get_settings
 from api.authorization import require_workspace
 from api.dependencies import SessionDep
+from api.events import Event, get_broadcaster
 from api.models.entities import (
     ApiKey,
     BrowserSession,
     User,
     Workspace,
     WorkspaceInvitation,
+    ProjectInvitation,
+    ProjectMembership,
+    Project,
     WorkspaceLifecycleEvent,
     WorkspaceMembership,
     WorkspaceMembershipEvent,
@@ -29,6 +33,7 @@ from api.models.enums import (
     WorkspaceLifecycleAction,
     WorkspaceMembershipAction,
     WorkspaceRole,
+    SSEAction,
 )
 from api.schemas import (
     WorkspaceCreate,
@@ -381,9 +386,7 @@ def accept_workspace_invitation(
     _require_interactive_browser()
     token_hash = _hash_invitation_token(payload.token)
     invitation = session.exec(
-        select(WorkspaceInvitation).where(
-            WorkspaceInvitation.token_hash == token_hash
-        )
+        select(WorkspaceInvitation).where(WorkspaceInvitation.token_hash == token_hash)
     ).first()
     if invitation is not None:
         session.exec(
@@ -473,7 +476,7 @@ def accept_workspace_invitation(
     "/{workspace_id}/members/{member_user_id}",
     response_model=WorkspaceMembershipMutationRead,
 )
-def update_workspace_member_role(
+async def update_workspace_member_role(
     workspace_id: int,
     member_user_id: int,
     payload: WorkspaceMemberRoleUpdate,
@@ -540,6 +543,15 @@ def update_workspace_member_role(
         )
     )
     session.commit()
+    await get_broadcaster().publish(
+        Event(
+            action=SSEAction.SYNC_REQUIRED,
+            entity="workspace",
+            entity_id=workspace_id,
+            workspace_id=workspace_id,
+            recipient_user_id=member_user_id,
+        )
+    )
     return WorkspaceMembershipMutationRead(
         workspace_id=workspace_id,
         user_id=member_user_id,
@@ -552,7 +564,7 @@ def update_workspace_member_role(
     "/{workspace_id}/members/{member_user_id}",
     response_model=WorkspaceMembershipMutationRead,
 )
-def remove_workspace_member(
+async def remove_workspace_member(
     workspace_id: int,
     member_user_id: int,
     session: SessionDep,
@@ -620,6 +632,15 @@ def remove_workspace_member(
         )
     )
     session.commit()
+    await get_broadcaster().publish(
+        Event(
+            action=SSEAction.SYNC_REQUIRED,
+            entity="workspace",
+            entity_id=workspace_id,
+            workspace_id=workspace_id,
+            recipient_user_id=member_user_id,
+        )
+    )
     return WorkspaceMembershipMutationRead(
         workspace_id=workspace_id,
         user_id=member_user_id,
@@ -765,7 +786,7 @@ def export_workspace(
     "/{workspace_id}/deletion",
     response_model=WorkspaceDeletionRead,
 )
-def schedule_workspace_deletion(
+async def schedule_workspace_deletion(
     workspace_id: int,
     payload: WorkspaceDeletionCreate,
     session: SessionDep,
@@ -788,8 +809,7 @@ def schedule_workspace_deletion(
             select(WorkspaceLifecycleEvent)
             .where(
                 WorkspaceLifecycleEvent.workspace_id == workspace_id,
-                WorkspaceLifecycleEvent.action
-                == WorkspaceLifecycleAction.EXPORTED,
+                WorkspaceLifecycleEvent.action == WorkspaceLifecycleAction.EXPORTED,
             )
             .order_by(WorkspaceLifecycleEvent.id.desc())
             .limit(20)
@@ -808,14 +828,10 @@ def schedule_workspace_deletion(
     if matching_export is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Create a fresh workspace export before scheduling deletion."
-            ),
+            detail=("Create a fresh workspace export before scheduling deletion."),
         )
 
-    purge_after = now + timedelta(
-        days=get_settings().deletion_recovery_days
-    )
+    purge_after = now + timedelta(days=get_settings().deletion_recovery_days)
     workspace.deletion_requested_at = now
     workspace.purge_after = purge_after
     workspace.deletion_requested_by = user.id
@@ -842,6 +858,16 @@ def schedule_workspace_deletion(
             )
         ).all()
     )
+    project_ids = select(Project.id).where(Project.workspace_id == workspace_id)
+    for project_invitation in session.exec(
+        select(ProjectInvitation).where(
+            ProjectInvitation.project_id.in_(project_ids),
+            ProjectInvitation.accepted_at.is_(None),
+            ProjectInvitation.revoked_at.is_(None),
+        )
+    ).all():
+        project_invitation.revoked_at = now
+        session.add(project_invitation)
     for invitation in pending_invitations:
         invitation.revoked_at = now
         session.add(invitation)
@@ -871,7 +897,31 @@ def schedule_workspace_deletion(
             },
         )
     )
+    recipients = set(
+        session.exec(
+            select(WorkspaceMembership.user_id).where(
+                WorkspaceMembership.workspace_id == workspace_id
+            )
+        ).all()
+    )
+    recipients.update(
+        session.exec(
+            select(ProjectMembership.user_id)
+            .join(Project)
+            .where(Project.workspace_id == workspace_id)
+        ).all()
+    )
     session.commit()
+    for recipient in recipients:
+        await get_broadcaster().publish(
+            Event(
+                action=SSEAction.SYNC_REQUIRED,
+                entity="workspace",
+                entity_id=workspace_id,
+                workspace_id=workspace_id,
+                recipient_user_id=recipient,
+            )
+        )
     return WorkspaceDeletionRead(
         workspace_id=workspace_id,
         deletion_requested_at=now,

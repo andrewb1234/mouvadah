@@ -22,12 +22,27 @@ export function AppLayout({
 }: {
   onNavigateProfile: () => void;
 }) {
-  const { activeTicketId, openTicket } = useWorkspace();
+  const {
+    activeTicketId,
+    openTicket,
+    refreshAccess,
+    revalidateAccess,
+    activeProjectId,
+    accessRevision,
+    project,
+  } = useWorkspace();
   const [lastEvent, setLastEvent] = useState<SSEPayload | null>(null);
   const [navigationOpen, setNavigationOpen] = useState(false);
 
   useSSE((payload) => {
     setLastEvent(payload);
+    if (
+      (payload.action === "PROJECT_ACCESS_CHANGED" ||
+        payload.action === "PROJECT_DELETED") &&
+      payload.entity_id === activeProjectId
+    )
+      refreshAccess();
+    else if (payload.action === "SYNC_REQUIRED") void revalidateAccess();
   });
 
   return (
@@ -88,7 +103,8 @@ export function AppLayout({
       />
 
       <TicketModal
-        ticketId={activeTicketId}
+        key={accessRevision}
+        ticketId={project ? activeTicketId : null}
         onClose={() => openTicket(null)}
         lastEvent={lastEvent}
       />
