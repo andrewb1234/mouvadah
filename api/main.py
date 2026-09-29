@@ -38,6 +38,7 @@ from api.observability import (
     metrics_token_matches,
 )
 from api.routes import (
+    project_members,
     agent,
     apikeys,
     auth,
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     # UI-facing routes (require authenticated user).
     ui_auth = [Depends(get_current_user)]
     api_v1.include_router(projects.router, dependencies=ui_auth)
+    api_v1.include_router(project_members.router, dependencies=ui_auth)
     api_v1.include_router(subprojects.router, dependencies=ui_auth)
     api_v1.include_router(tickets.router, dependencies=ui_auth)
     api_v1.include_router(comments.router, dependencies=ui_auth)

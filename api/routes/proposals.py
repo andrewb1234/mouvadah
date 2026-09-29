@@ -41,6 +41,8 @@ async def create_proposal(
     node = require_knowledge_node(session, user, node_id, write=True)
 
     proposal = KnowledgeProposal(
+        actor_user_id=user.id,
+        actor_name=user.name,
         node_id=node_id,
         proposed_by="AGENT",
         proposed_changes=payload.proposed_changes,
@@ -126,7 +128,9 @@ async def review_proposal(
 ) -> KnowledgeProposal:
     """Human accepts or rejects a proposal. Accepting applies the patch."""
     if payload.action not in ("accept", "reject"):
-        raise HTTPException(status_code=422, detail="action must be 'accept' or 'reject'.")
+        raise HTTPException(
+            status_code=422, detail="action must be 'accept' or 'reject'."
+        )
 
     proposal = require_proposal(session, user, proposal_id, write=True)
     proposal_node = require_knowledge_node(
@@ -139,16 +143,25 @@ async def review_proposal(
         raise HTTPException(status_code=409, detail="Proposal is already reviewed.")
 
     proposal.status = "ACCEPTED" if payload.action == "accept" else "REJECTED"
-    proposal.reviewed_by = payload.reviewed_by
+    proposal.reviewed_by = user.name
     proposal.reviewed_at = utcnow()
 
     if payload.action == "accept":
         node = proposal_node
-        allowed_fields = {"title", "node_type", "status", "content", "source_refs", "parent_id", "superseded_by"}
+        allowed_fields = {
+            "title",
+            "node_type",
+            "status",
+            "content",
+            "source_refs",
+            "parent_id",
+            "superseded_by",
+        }
         for key, value in proposal.proposed_changes.items():
             if key in allowed_fields:
                 if key == "parent_id" and value is not None:
                     from api.routes.knowledge import _validate_parent
+
                     _validate_parent(session, node.project_id, value, self_id=node.id)
                 if key == "superseded_by" and value is not None:
                     superseding_node = session.exec(
@@ -167,6 +180,9 @@ async def review_proposal(
                         )
                 setattr(node, key, value)
         from api.utils.time import utcnow as _utcnow
+
+        node.actor_user_id = user.id
+        node.actor_name = user.name
         node.updated_at = _utcnow()
         session.add(node)
 

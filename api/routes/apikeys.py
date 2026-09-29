@@ -16,7 +16,7 @@ from sqlmodel import select
 
 from api.api_keys import issue_api_key
 from api.auth import CurrentUser
-from api.authorization import require_workspace
+from api.authorization import require_workspace, require_project
 from api.dependencies import SessionDep
 from api.models.entities import (
     ApiKey,
@@ -69,6 +69,7 @@ class ApiKeyOut(BaseModel):
     last_used_at: Optional[datetime]
     created_at: datetime
     revoked: bool
+    resource_mode: str = "WORKSPACE"
 
 
 class ApiKeyCreated(ApiKeyOut):
@@ -105,6 +106,7 @@ def _to_out(session: SessionDep, api_key: ApiKey) -> ApiKeyOut:
         last_used_at=api_key.last_used_at,
         created_at=api_key.created_at,
         revoked=api_key.revoked,
+        resource_mode=api_key.resource_mode,
     )
 
 
@@ -134,47 +136,43 @@ async def create_api_key(
     """Create a new API key. The full key is returned only once."""
     _require_browser_session(request)
     workspace_id = payload.workspace_id
-    if workspace_id is None:
-        workspace_id = session.exec(
-            select(WorkspaceMembership.workspace_id)
-            .join(
-                Workspace,
-                Workspace.id == WorkspaceMembership.workspace_id,  # type: ignore[arg-type]
-            )
-            .where(WorkspaceMembership.user_id == user.id)
-            .where(Workspace.deletion_requested_at.is_(None))
-            .order_by(WorkspaceMembership.id)
-        ).first()
-    if workspace_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Create a workspace before issuing an API key.",
-        )
-    require_workspace(
-        session,
-        user,
-        workspace_id,
-        write=(
-            WRITE_SCOPE in payload.scopes
-            or DELETE_SCOPE in payload.scopes
-        ),
-        lock=True,
-    )
-
     if payload.project_ids:
-        projects = list(
-            session.exec(
-                select(Project).where(
-                    Project.id.in_(payload.project_ids),  # type: ignore[union-attr]
-                    Project.workspace_id == workspace_id,
-                )
-            ).all()
-        )
-        if {project.id for project in projects} != set(payload.project_ids):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Every project restriction must belong to the key workspace.",
+        projects = [
+            require_project(
+                session,
+                user,
+                project_id,
+                write=bool({WRITE_SCOPE, DELETE_SCOPE} & set(payload.scopes)),
             )
+            for project_id in payload.project_ids
+        ]
+        workspace_id = (
+            workspace_id if workspace_id is not None else projects[0].workspace_id
+        )
+        if any(project.workspace_id != workspace_id for project in projects):
+            raise HTTPException(
+                422, "Every project restriction must belong to the key workspace."
+            )
+    else:
+        if workspace_id is None:
+            workspace_id = session.exec(
+                select(WorkspaceMembership.workspace_id)
+                .join(Workspace)
+                .where(
+                    WorkspaceMembership.user_id == user.id,
+                    Workspace.deletion_requested_at.is_(None),
+                )
+                .order_by(WorkspaceMembership.id)
+            ).first()
+        if workspace_id is None:
+            raise HTTPException(409, "Create a workspace before issuing an API key.")
+        require_workspace(
+            session,
+            user,
+            workspace_id,
+            write=bool({WRITE_SCOPE, DELETE_SCOPE} & set(payload.scopes)),
+            lock=True,
+        )
 
     api_key, raw_key = issue_api_key(
         session,

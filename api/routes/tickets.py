@@ -110,7 +110,11 @@ async def update_ticket(
         except ValueError as exc:  # pragma: no cover - pydantic catches this
             raise HTTPException(status_code=400, detail="Invalid status.") from exc
         new_status = updates["status"]
-        if new_status == TicketStatus.BLOCKED and not updates.get("blocked_by") and not ticket.blocked_by:
+        if (
+            new_status == TicketStatus.BLOCKED
+            and not updates.get("blocked_by")
+            and not ticket.blocked_by
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="blocked_by is required when setting status to BLOCKED.",
@@ -123,10 +127,18 @@ async def update_ticket(
 
     if any(k in updates for k in ("title", "description")):
         original = {"title": ticket.title, "description": ticket.description}
-        if any(updates.get(k) != original[k] for k in ("title", "description") if k in updates):
+        if any(
+            updates.get(k) != original[k]
+            for k in ("title", "description")
+            if k in updates
+        ):
             audit_events.append(AuditAction.CONTENT_UPDATE)
 
-    if "mr_link" in updates and updates["mr_link"] != ticket.mr_link and updates["mr_link"]:
+    if (
+        "mr_link" in updates
+        and updates["mr_link"] != ticket.mr_link
+        and updates["mr_link"]
+    ):
         audit_events.append(AuditAction.MR_LINKED)
 
     if "depends_on" in updates:
@@ -141,7 +153,15 @@ async def update_ticket(
 
     session.add(ticket)
     for action in audit_events:
-        session.add(AuditLog(ticket_id=ticket.id, action=action, actor=actor))
+        session.add(
+            AuditLog(
+                actor_user_id=user.id,
+                actor_name=user.name,
+                ticket_id=ticket.id,
+                action=action,
+                actor=actor,
+            )
+        )
     session.commit()
     session.refresh(ticket)
 
@@ -212,7 +232,13 @@ async def attach_mr_link(
     ticket.mr_link = payload.url
     session.add(ticket)
     session.add(
-        AuditLog(ticket_id=ticket.id, action=AuditAction.MR_LINKED, actor=actor)
+        AuditLog(
+            actor_user_id=user.id,
+            actor_name=user.name,
+            ticket_id=ticket.id,
+            action=AuditAction.MR_LINKED,
+            actor=actor,
+        )
     )
     session.commit()
     session.refresh(ticket)
@@ -312,6 +338,8 @@ async def claim_ticket(
 
     session.add(
         AuditLog(
+            actor_user_id=user.id,
+            actor_name=user.name,
             ticket_id=ticket_id,
             action=AuditAction.TICKET_CLAIMED,
             actor=_infer_actor(request),
@@ -387,7 +415,9 @@ async def heartbeat_ticket(
     return build_ticket_read(session, ticket)
 
 
-@router.post("/subprojects/{subproject_id}/requeue-expired", response_model=list[TicketRead])
+@router.post(
+    "/subprojects/{subproject_id}/requeue-expired", response_model=list[TicketRead]
+)
 async def requeue_expired(
     subproject_id: int,
     session: SessionDep,
@@ -431,6 +461,8 @@ async def requeue_expired(
         requeued_ids.append(candidate_id)
         session.add(
             AuditLog(
+                actor_user_id=user.id,
+                actor_name=user.name,
                 ticket_id=candidate_id,
                 action=AuditAction.TICKET_REQUEUED,
                 actor=ActorRole.AGENT,

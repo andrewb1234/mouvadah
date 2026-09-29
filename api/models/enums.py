@@ -103,6 +103,7 @@ class KnowledgeNodeStatus(str, Enum):
 
 
 class SSEAction(str, Enum):
+    PROJECT_ACCESS_CHANGED = "PROJECT_ACCESS_CHANGED"
     """Vocabulary of events broadcast over ``GET /api/v1/events``."""
 
     SYNC_REQUIRED = "SYNC_REQUIRED"

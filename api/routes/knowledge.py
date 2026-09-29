@@ -155,6 +155,8 @@ async def create_knowledge_node(
 
     actor = _infer_actor(request)
     node = KnowledgeNode(
+        actor_user_id=user.id,
+        actor_name=user.name,
         project_id=project_id,
         parent_id=payload.parent_id,
         title=payload.title,
@@ -222,6 +224,8 @@ async def update_knowledge_node(
 
     for key, value in updates.items():
         setattr(node, key, value)
+    node.actor_user_id = user.id
+    node.actor_name = user.name
     node.updated_at = utcnow()
 
     session.add(node)

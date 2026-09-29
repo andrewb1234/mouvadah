@@ -41,6 +41,7 @@ NONCE_BYTES = 12
 TAG_BYTES = 16
 CHUNK_BYTES = 1024 * 1024
 REQUIRED_POSTGRES_TABLES = {
+    "projectmembership", "projectinvitation", "projectaccessevent",
     "agentsession",
     "alembic_version",
     "apikey",

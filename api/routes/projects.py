@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import case, func
+from sqlalchemy import case, func, delete
 from sqlmodel import select
 
 from api.auth import CurrentUser
 from api.authorization import (
     ensure_personal_workspace,
+    accessible_projects_query,
+    project_read,
     require_project,
     require_workspace,
 )
@@ -21,6 +23,8 @@ from api.models.entities import (
     KnowledgeNode,
     KnowledgeProposal,
     Project,
+    ProjectMembership,
+    ProjectInvitation,
     Subproject,
     Ticket,
     Workspace,
@@ -61,30 +65,10 @@ def list_projects(
     session: SessionDep,
     user: CurrentUser,
 ) -> list[Project]:
-    query = (
-        select(Project)
-        .join(
-            Workspace,
-            Workspace.id == Project.workspace_id,  # type: ignore[arg-type]
-        )
-        .join(
-            WorkspaceMembership,
-            WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
-        )
-        .where(
-            WorkspaceMembership.user_id == user.id,
-            Workspace.deletion_requested_at.is_(None),
-        )
-        .order_by(Project.created_at)
-    )
-    api_key = get_api_key_authorization()
-    if api_key is not None:
-        query = query.where(Project.workspace_id == api_key.workspace_id)
-        if api_key.project_ids:
-            query = query.where(Project.id.in_(api_key.project_ids))  # type: ignore[union-attr]
-    return list(
-        session.exec(query).all()
-    )
+    return [
+        project_read(session, user, project)
+        for project in session.exec(accessible_projects_query(user)).all()
+    ]
 
 
 @router.post(
@@ -149,7 +133,7 @@ async def create_project(
             workspace_id=workspace.id,
         )
     )
-    return project
+    return project_read(session, user, project)
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
@@ -158,7 +142,7 @@ def get_project(
     session: SessionDep,
     user: CurrentUser,
 ) -> Project:
-    return require_project(session, user, project_id)
+    return project_read(session, user, require_project(session, user, project_id))
 
 
 def _control_room_ticket_refs(
@@ -342,7 +326,7 @@ def get_control_room_summary(
     )
 
     return ControlRoomSummary(
-        project=ProjectRead.model_validate(project),
+        project=project_read(session, user, project),
         subprojects=[
             ControlRoomSubprojectRead(
                 id=subproject_id,
@@ -402,7 +386,9 @@ def list_project_tickets(
         ).all()
     )
     refs = resolve_ticket_refs(session, ticket_ids)
-    return [TicketRef(**refs[ticket_id]) for ticket_id in ticket_ids if ticket_id in refs]
+    return [
+        TicketRef(**refs[ticket_id]) for ticket_id in ticket_ids if ticket_id in refs
+    ]
 
 
 @router.delete(
@@ -458,8 +444,33 @@ async def delete_project(
     if restrictions:
         session.flush()
 
+    guest_ids = list(
+        session.exec(
+            select(ProjectMembership.user_id).where(
+                ProjectMembership.project_id == project_id
+            )
+        ).all()
+    )
+    session.exec(
+        delete(ProjectInvitation).where(ProjectInvitation.project_id == project_id)
+    )
+    session.exec(
+        delete(ProjectMembership).where(ProjectMembership.project_id == project_id)
+    )
     session.delete(project)
     session.commit()
+
+    for guest_id in guest_ids:
+        await get_broadcaster().publish(
+            Event(
+                action=SSEAction.PROJECT_ACCESS_CHANGED,
+                entity="project",
+                entity_id=project_id,
+                project_id=project_id,
+                workspace_id=workspace_id,
+                recipient_user_id=guest_id,
+            )
+        )
 
     await get_broadcaster().publish(
         Event(
