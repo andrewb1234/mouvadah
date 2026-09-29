@@ -69,7 +69,7 @@ test("authenticated root replace-navigates to the application", async ({
   await authenticateBrowser(page);
   await page.goto("/");
 
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL((url) => url.pathname === "/app");
   await expect(
     page.getByRole("heading", { name: "Mouvadah" }),
   ).toBeVisible();
@@ -80,9 +80,13 @@ test("authenticated application survives a direct refresh", async ({ page }) => 
   await authenticateBrowser(page);
   await page.goto("/app");
   await expect(page.getByText("Playwright Owner", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(
+    (url) => url.pathname === "/app" && Boolean(url.searchParams.get("project")),
+  );
+  const selectedProjectUrl = page.url();
 
   await page.reload();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(selectedProjectUrl);
   await expect(page.getByText("Playwright Owner", { exact: true })).toBeVisible();
 });
 
