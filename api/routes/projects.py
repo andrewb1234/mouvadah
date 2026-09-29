@@ -422,6 +422,8 @@ async def delete_project(
         ).all()
     )
     delete_ticket_dependencies(session, ticket_ids)
+    from api.utils.github_cleanup import delete_project_repositories
+    delete_project_repositories(session, [project_id])
 
     # An empty ApiKeyProject set means unrestricted workspace access. If this
     # was the last allowed project for a restricted key, revoke the key instead

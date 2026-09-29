@@ -57,6 +57,48 @@ def test_concurrent_ticket_creation_retries(postgres_engine, monkeypatch):
     exercise_concurrent_creates(postgres_engine, monkeypatch)
 
 
+def test_concurrent_github_delivery_receipts(postgres_engine, monkeypatch):
+    """Provider retries racing across API workers persist one durable receipt."""
+    import hashlib
+    import hmac
+    import json
+    from fastapi.testclient import TestClient
+    from api import database, events
+    from api.main import app
+    from api.models.entities import GitHubConnection, GitHubDelivery
+    upgrade_database(postgres_engine)
+    assert_schema_matches_metadata(postgres_engine)
+    secret = "postgres-github-webhook-test-secret"
+    for name, value in {
+        "GITHUB_APP_ENABLED": "true", "GITHUB_APP_ID": "123", "GITHUB_APP_SLUG": "test-app",
+        "GITHUB_APP_CLIENT_ID": "test", "GITHUB_APP_CLIENT_SECRET": "test",
+        "GITHUB_APP_PRIVATE_KEY": "test", "GITHUB_WEBHOOK_SECRETS": json.dumps([secret]),
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    with Session(postgres_engine) as session:
+        w = Workspace(name="GitHub race", slug="github-race"); session.add(w); session.flush()
+        session.add(GitHubConnection(installation_id=11, workspace_id=w.id, account_login="test",
+                    account_id=22, connected_by=1, allowed_repositories=[])); session.commit()
+    original_engine = database.engine
+    database._set_engine(postgres_engine)
+    events.reset_broadcaster()
+    body = json.dumps({"installation": {"id": 11}, "action": "created"}).encode()
+    headers = {"x-github-delivery": "concurrent-retry", "x-github-event": "installation",
+               "x-hub-signature-256": "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()}
+    try:
+        with TestClient(app) as client:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                responses = list(pool.map(lambda _: client.post("/integrations/github/webhook", content=body, headers=headers), range(8)))
+            assert all(r.status_code == 202 for r in responses)
+            assert sum(r.json()["status"] == "queued" for r in responses) == 1
+        with Session(postgres_engine) as session:
+            receipts = session.exec(select(GitHubDelivery)).all()
+            assert len(receipts) == 1 and receipts[0].status == "pending"
+    finally:
+        database._set_engine(original_engine)
+
+
 @pytest.fixture
 def postgres_engine():
     raw_url = os.environ.get("POSTGRES_TEST_URL")

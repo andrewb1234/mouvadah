@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     """Typed, cached runtime settings for the FastAPI process."""
 
     github_pat: str | None = None
+    github_app_enabled: bool = False
+    github_app_id: int | None = None
+    github_app_slug: str | None = None
+    github_app_private_key: SecretStr | None = None
+    github_app_client_id: str | None = None
+    github_app_client_secret: SecretStr | None = None
+    # First key signs new deliveries; additional keys allow a rotation overlap.
+    github_webhook_secrets: list[SecretStr] = []
     database_url: str = _DEFAULT_DATABASE_URL
     realtime_database_url: str | None = None
     migration_mode: Literal["upgrade", "check"] = "upgrade"

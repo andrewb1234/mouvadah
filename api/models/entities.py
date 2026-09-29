@@ -653,3 +653,60 @@ class ProjectAccessEvent(SQLModel, table=True):
     subject_user_id: Optional[int] = None
     action: str
     occurred_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+
+class GitHubConnection(SQLModel, table=True):
+    """An installation may belong to exactly one workspace on this server."""
+    installation_id: int = Field(primary_key=True)
+    workspace_id: int = Field(sa_column=Column(Integer, ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True))
+    account_login: str
+    account_id: int
+    # Only repositories proven administrable by the connecting GitHub user.
+    allowed_repositories: List[dict] = Field(sa_column=Column(JSON, nullable=False))
+    status: str = "active"
+    last_error: Optional[str] = None
+    connected_by: int
+    updated_at: datetime = Field(default_factory=utcnow)
+    next_sync_at: datetime = Field(default_factory=utcnow, index=True)
+    sync_cursor: int = 0
+    link_cursor: int = 0
+    cycle_started_at: Optional[datetime] = None
+
+
+class GitHubConnectState(SQLModel, table=True):
+    state_hash: str = Field(primary_key=True)
+    workspace_id: int = Field(sa_column=Column(Integer, ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False))
+    user_id: int
+    installation_id: int
+    expires_at: datetime
+    used: bool = False
+
+
+class GitHubRepository(SQLModel, table=True):
+    repository_id: int = Field(primary_key=True)
+    installation_id: int = Field(sa_column=Column(Integer, ForeignKey("githubconnection.installation_id", ondelete="CASCADE"), nullable=False, index=True))
+    project_id: int = Field(sa_column=Column(Integer, ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True))
+    full_name: str
+    status: str = "active"
+
+
+class GitHubTicketLink(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("ticket_id", "repository_id", "kind", "number", name="uq_github_ticket_object"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(sa_column=Column(Integer, ForeignKey("ticket.id", ondelete="CASCADE"), nullable=False, index=True))
+    repository_id: int = Field(sa_column=Column(Integer, ForeignKey("githubrepository.repository_id", ondelete="CASCADE"), nullable=False, index=True))
+    kind: str
+    number: int
+    snapshot: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    synced_at: Optional[datetime] = None
+
+
+class GitHubDelivery(SQLModel, table=True):
+    delivery_id: str = Field(primary_key=True)
+    workspace_id: Optional[int] = Field(default=None, sa_column=Column(Integer, ForeignKey("workspace.id", ondelete="CASCADE"), nullable=True, index=True))
+    installation_id: int = Field(index=True)
+    event: str
+    payload_sha256: str
+    status: str = "pending"
+    received_at: datetime = Field(default_factory=utcnow, index=True)
+    completed_at: Optional[datetime] = None

@@ -44,6 +44,7 @@ from api.routes import (
     auth,
     comments,
     events,
+    github,
     knowledge,
     projects,
     proposals,
@@ -134,6 +135,8 @@ def create_app() -> FastAPI:
     api_v1.include_router(events.router)
     api_v1.include_router(apikeys.router, dependencies=ui_auth)
     api_v1.include_router(workspaces.router, dependencies=ui_auth)
+    api_v1.include_router(github.router, dependencies=ui_auth)
+    app.include_router(github.webhook_router)
 
     # Agent routes (also require authenticated user via session or API key).
     api_v1.include_router(agent.router, dependencies=ui_auth)

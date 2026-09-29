@@ -198,6 +198,8 @@ async def delete_ticket(
     subproject_id = ticket.subproject_id
     workspace_id = workspace_id_for_ticket(session, ticket_id)
     delete_ticket_dependencies(session, [ticket_id])
+    from api.utils.github_cleanup import delete_ticket_links
+    delete_ticket_links(session, [ticket_id])
     session.delete(ticket)
     session.commit()
 
