@@ -248,6 +248,7 @@ async def create_ticket(
     description: str,
     assignee: str,
     depends_on: list[int] | None = None,
+    client_ref: str | None = None,
 ) -> str:
     """Create a new ticket inside a subproject.
 
@@ -272,6 +273,8 @@ async def create_ticket(
     }
     if depends_on:
         payload["depends_on"] = depends_on
+    if client_ref is not None:
+        payload["client_ref"] = client_ref
 
     response = await _request(
         "POST",
@@ -280,14 +283,14 @@ async def create_ticket(
     )
     if response.status_code == 404:
         return f"ERROR: subproject {subproject_id} does not exist."
-    if response.status_code != 201:
+    if response.status_code not in {200, 201}:
         return (
             f"ERROR: create ticket failed "
             f"(status={response.status_code}): {response.text}"
         )
     ticket = response.json()
     return (
-        f"Created ticket #{ticket['id']} [{ticket['status']}/{ticket['assignee']}] "
+        f"{'Existing' if response.status_code == 200 else 'Created'} ticket #{ticket['id']} [{ticket['status']}/{ticket['assignee']}] "
         f"{ticket['title']} (subproject={ticket['subproject_id']})."
     )
 
@@ -874,6 +877,12 @@ SAFE_TOOLS: list[Tool] = [
                     "type": "array",
                     "items": {"type": "integer"},
                     "description": "Ticket IDs this ticket depends on. All deps must be in the same project.",
+                },
+                "client_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "description": "Stable subproject-scoped create key. Retry with the same payload/key to return the existing ticket; changed payload conflicts.",
                 },
             },
             "required": [

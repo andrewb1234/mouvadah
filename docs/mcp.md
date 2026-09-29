@@ -82,6 +82,19 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
      Returns an explicit `ERROR` if the project does not exist.
 
 7. **`create_ticket(subproject_id: int, title: str, description: str, assignee: str) -> str`**
+   * **Retry safety:** Optional `client_ref` (1–128 characters) identifies one
+     logical create request within the subproject. The caller generates and
+     durably saves this key **before sending the first request**. It identifies
+     a creation intent, not successful creation; the server still assigns the
+     ticket ID. For example, persist `planning-run-42:item-7`, submit it, and
+     reuse it if the response is lost. After acknowledgement, use the returned
+     ticket ID for reads and updates. A new intentional ticket gets a new key.
+     Reuse the same payload/key
+     after a timeout: HTTP 200 returns the existing ticket, including later
+     human edits; a new ticket returns 201. A different creation payload for
+     the same key returns 409. Dependency order is immaterial. Omit the key
+     to retain ordinary create behavior. The key lasts while the ticket exists;
+     deleting the ticket releases it. A replay does not emit a creation event.
    * **Action:** `POST /api/v1/subprojects/{subproject_id}/tickets`
    * **Payload:** `{"title": title, "description": description, "assignee": assignee}`
    * **Constraint:** `assignee` must be `HUMAN`, `AGENT`, or `UNASSIGNED`

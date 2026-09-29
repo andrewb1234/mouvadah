@@ -299,6 +299,10 @@ class Subproject(SQLModel, table=True):
 class Ticket(SQLModel, table=True):
     """Actionable unit tracked on the Kanban board."""
 
+    __table_args__ = (
+        Index("uq_ticket_subproject_client_ref", "subproject_id", "client_ref", unique=True),
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     subproject_id: int = Field(foreign_key="subproject.id", index=True)
     title: str
@@ -316,6 +320,8 @@ class Ticket(SQLModel, table=True):
     claimed_by: Optional[str] = Field(default=None, index=True)
     claimed_at: Optional[datetime] = Field(default=None)
     lease_expires_at: Optional[datetime] = Field(default=None)
+    client_ref: Optional[str] = Field(default=None, max_length=128)
+    creation_fingerprint: Optional[str] = Field(default=None, max_length=64)
 
     subproject: Optional[Subproject] = Relationship(back_populates="tickets")
     comments: List["Comment"] = Relationship(

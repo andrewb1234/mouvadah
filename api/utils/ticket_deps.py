@@ -206,6 +206,7 @@ def build_ticket_read(session: Session, ticket: Ticket):
     return TicketRead(
         id=ticket.id,  # type: ignore[arg-type]
         subproject_id=ticket.subproject_id,
+        client_ref=ticket.client_ref,
         project_id=subproject.project_id if subproject else None,
         title=ticket.title,
         description=ticket.description,
