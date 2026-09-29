@@ -277,6 +277,9 @@ class TicketRef(BaseModel):
 
 
 class TicketCreate(BaseModel):
+    client_ref: str | None = Field(
+        default=None, min_length=1, max_length=128
+    )
     title: str = Field(min_length=1, max_length=200)
     description: Optional[LongText] = None
     assignee: TicketAssignee = TicketAssignee.UNASSIGNED
@@ -315,6 +318,8 @@ class TicketUpdate(BaseModel):
 
 class TicketRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    client_ref: str | None = None
 
     id: int
     subproject_id: int

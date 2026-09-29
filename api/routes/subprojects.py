@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlmodel import select
+from sqlalchemy.exc import IntegrityError
 
 from api.auth import CurrentUser
 from api.authorization import require_subproject, workspace_id_for_project
@@ -27,6 +28,7 @@ from api.utils.ticket_deps import (
     resolve_ticket_refs,
     validate_and_set_deps,
 )
+from api.utils.ticket_idempotency import creation_fingerprint, find_replay
 
 router = APIRouter(prefix="/subprojects", tags=["subprojects"])
 
@@ -154,6 +156,7 @@ async def delete_subproject(
 async def create_ticket(
     subproject_id: int,
     payload: TicketCreate,
+    response: Response,
     session: SessionDep,
     user: CurrentUser,
 ) -> TicketRead:
@@ -164,6 +167,12 @@ async def create_ticket(
         write=True,
     )
 
+    fingerprint = creation_fingerprint(payload)
+    replay = find_replay(session, subproject_id, payload.client_ref, fingerprint)
+    if replay is not None:
+        response.status_code = status.HTTP_200_OK
+        return build_ticket_read(session, replay)
+
     ticket = Ticket(
         subproject_id=subproject_id,
         title=payload.title,
@@ -171,14 +180,22 @@ async def create_ticket(
         status=payload.status,
         assignee=payload.assignee,
         source_refs=list(payload.source_refs),
+        client_ref=payload.client_ref,
+        creation_fingerprint=fingerprint if payload.client_ref is not None else None,
     )
-    session.add(ticket)
-    session.flush()  # get the id without committing yet
-
-    if payload.depends_on:
-        validate_and_set_deps(session, ticket.id, subproject_id, payload.depends_on)  # type: ignore[arg-type]
-
-    session.commit()
+    try:
+        session.add(ticket)
+        session.flush()  # unique index arbitrates concurrent create requests
+        if payload.depends_on:
+            validate_and_set_deps(session, ticket.id, subproject_id, payload.depends_on)  # type: ignore[arg-type]
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        replay = find_replay(session, subproject_id, payload.client_ref, fingerprint)
+        if replay is None:
+            raise
+        response.status_code = status.HTTP_200_OK
+        return build_ticket_read(session, replay)
     session.refresh(ticket)
 
     await get_broadcaster().publish(

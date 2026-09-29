@@ -50,6 +50,13 @@ from api.schemas import WorkspaceInvitationCreate
 from api.utils.time import utcnow
 
 
+def test_concurrent_ticket_creation_retries(postgres_engine, monkeypatch):
+    from api.tests.test_ticket_idempotency import exercise_concurrent_creates
+    upgrade_database(postgres_engine)
+    assert_schema_matches_metadata(postgres_engine)
+    exercise_concurrent_creates(postgres_engine, monkeypatch)
+
+
 @pytest.fixture
 def postgres_engine():
     raw_url = os.environ.get("POSTGRES_TEST_URL")
