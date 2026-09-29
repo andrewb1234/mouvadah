@@ -106,6 +106,36 @@ def test_cross_workspace_and_scoped_links(multi_user_client, github):
     assert conflict.status_code == 303 and "github=already_connected" in conflict.headers["location"]
 
 
+def test_project_collaborators_obey_editor_viewer_and_revocation(multi_user_client, github, engine):
+    from api.models.entities import ProjectMembership
+    client, users = multi_user_client
+    p, t, link = mapped(client, github)
+    private, _ = graph(client)
+    graph(client, {"x-test-user": "bob"})
+    with Session(engine) as session:
+        membership = ProjectMembership(project_id=p["id"], user_id=users["bob"].id,
+            created_by_user_id=users["alice"].id, role="EDITOR")
+        session.add(membership); session.commit()
+    bob = {"x-test-user": "bob"}
+    assert client.get(f"/api/v1/github/tickets/{t['id']}/links", headers=bob).status_code == 200
+    assert client.get(f"/api/v1/github/projects/{p['id']}/repositories", headers=bob).status_code == 200
+    assert client.get(f"/api/v1/github/projects/{private['id']}/repositories", headers=bob).status_code == 404
+    assert client.get(f"/api/v1/github/workspaces/{p['workspace_id']}", headers=bob).status_code == 404
+    assert client.post(f"/api/v1/github/tickets/{t['id']}/links", headers=bob,
+        json={"repository_id": 33, "kind": "issue", "number": 2}).status_code == 200
+    with Session(engine) as session:
+        membership = session.exec(select(ProjectMembership).where(ProjectMembership.project_id == p["id"])).one()
+        membership.role = "VIEWER"; session.add(membership); session.commit()
+    assert client.get(f"/api/v1/github/tickets/{t['id']}/links", headers=bob).status_code == 200
+    assert client.post(f"/api/v1/github/tickets/{t['id']}/links", headers=bob,
+        json={"repository_id": 33, "kind": "pull", "number": 3}).status_code == 404
+    assert client.delete(f"/api/v1/github/tickets/{t['id']}/links/{link['id']}", headers=bob).status_code == 404
+    with Session(engine) as session:
+        membership = session.exec(select(ProjectMembership).where(ProjectMembership.project_id == p["id"])).one()
+        session.delete(membership); session.commit()
+    assert client.get(f"/api/v1/github/tickets/{t['id']}/links", headers=bob).status_code == 404
+
+
 def test_raw_signature_rotation_and_duplicate_receipt(client, github, engine):
     p, t, _ = mapped(client, github)
     assert hook(client, secret="wrong").status_code == 401

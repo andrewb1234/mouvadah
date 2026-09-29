@@ -400,7 +400,7 @@ function TicketBody({
             </div>
           </section>
 
-          {ticket.project_id && <GitHubTicketLinks key={ticket.id} ticketId={ticket.id} projectId={ticket.project_id} />}
+          {ticket.project_id && <GitHubTicketLinks key={ticket.id} ticketId={ticket.id} projectId={ticket.project_id} canEdit={Boolean(project?.can_edit)} />}
 
           <section
             aria-labelledby={`ticket-${ticket.id}-discussion-heading`}

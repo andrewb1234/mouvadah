@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0010_github_app"
-down_revision = "0009_ticket_idempotency"
+revision = "0011_github_app"
+down_revision = "0010_ticket_idempotency"
 branch_labels = None
 depends_on = None
 

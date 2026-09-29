@@ -62,6 +62,10 @@ connection settings and repository mappings, project repository discovery,
 and ticket link reads/create/delete. They retain existing workspace roles and
 project-scoped API-key restrictions. Only browser administrators can change
 installation settings; authorized project writers can maintain ticket links.
+Direct project collaborators may read that project's repository/evidence data
+without access to the owning workspace's installation settings or other projects.
+Editors may maintain links; viewers have read-only controls. Permission changes
+and removal take effect on the next request.
 
 ## Delivery, reconciliation and recovery
 
@@ -102,7 +106,8 @@ restore does not silently reconnect them. Purge removes their records.
 
 ## Release and acceptance
 
-Migration `0010_github_app` is additive after ticket-idempotency migration 0009.
+Migration `0011_github_app` is additive after ticket-idempotency migration 0010
+and project-collaboration migration 0009.
 Deploy migrations before new code. The integration is disabled until its real
 configuration and worker exist. To stop it, set `GITHUB_APP_ENABLED=false` in
 both server and worker and stop the scheduled worker. Database downgrade drops
