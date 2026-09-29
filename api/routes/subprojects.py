@@ -57,9 +57,7 @@ def get_subproject(
         tr.project_id = subproject.project_id
         dep_ids = dep_map.get(t.id, [])  # type: ignore[arg-type]
         tr.depends_on = dep_ids
-        tr.depends_on_refs = [
-            TicketRef(**ref_map[d]) for d in dep_ids if d in ref_map
-        ]
+        tr.depends_on_refs = [TicketRef(**ref_map[d]) for d in dep_ids if d in ref_map]
         ticket_reads.append(tr)
     return SubprojectDetail(
         id=subproject.id,  # type: ignore[arg-type]
@@ -97,6 +95,7 @@ async def update_subproject(
             entity="subproject",
             entity_id=subproject.id,  # type: ignore[arg-type]
             parent_id=subproject.project_id,
+            project_id=subproject.project_id,
             workspace_id=workspace_id_for_project(
                 session,
                 subproject.project_id,
@@ -126,7 +125,9 @@ async def delete_subproject(
     project_id = subproject.project_id
     workspace_id = workspace_id_for_project(session, project_id)
     ticket_ids = list(
-        session.exec(select(Ticket.id).where(Ticket.subproject_id == subproject_id)).all()
+        session.exec(
+            select(Ticket.id).where(Ticket.subproject_id == subproject_id)
+        ).all()
     )
     delete_ticket_dependencies(session, ticket_ids)
     session.delete(subproject)
@@ -138,6 +139,7 @@ async def delete_subproject(
             entity="subproject",
             entity_id=subproject_id,
             parent_id=project_id,
+            project_id=project_id,
             workspace_id=workspace_id,
         )
     )
@@ -185,6 +187,7 @@ async def create_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=subproject_id,
+            project_id=subproject.project_id,
             workspace_id=workspace_id_for_project(
                 session,
                 subproject.project_id,

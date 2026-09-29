@@ -77,6 +77,7 @@ async def start_session(
             entity="agent_session",
             entity_id=agent_session.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_project(session, project_id),
         )
     )
@@ -144,6 +145,7 @@ async def update_session(
             entity="agent_session",
             entity_id=session_id,
             parent_id=agent_session.project_id,
+            project_id=agent_session.project_id,
             workspace_id=workspace_id_for_project(
                 session,
                 agent_session.project_id,

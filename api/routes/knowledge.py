@@ -175,6 +175,7 @@ async def create_knowledge_node(
             entity="knowledge_node",
             entity_id=node.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_project(session, project_id),
         )
     )
@@ -238,6 +239,7 @@ async def update_knowledge_node(
             entity="knowledge_node",
             entity_id=node.id,  # type: ignore[arg-type]
             parent_id=node.project_id,
+            project_id=node.project_id,
             workspace_id=workspace_id_for_project(
                 session,
                 node.project_id,
@@ -267,6 +269,7 @@ async def delete_knowledge_node(
             entity="knowledge_node",
             entity_id=node_id,
             parent_id=project_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_project(session, project_id),
         )
     )

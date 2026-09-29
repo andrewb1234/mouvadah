@@ -130,6 +130,7 @@ async def create_project(
             action=SSEAction.PROJECT_CREATED,
             entity="project",
             entity_id=project.id,  # type: ignore[arg-type]
+            project_id=project.id,
             workspace_id=workspace.id,
         )
     )
@@ -477,6 +478,7 @@ async def delete_project(
             action=SSEAction.PROJECT_DELETED,
             entity="project",
             entity_id=project_id,
+            project_id=project_id,
             workspace_id=workspace_id,
         )
     )
@@ -531,6 +533,7 @@ async def create_subproject(
             entity="subproject",
             entity_id=subproject.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            project_id=project_id,
             workspace_id=project.workspace_id,
         )
     )

@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from api.auth import CurrentUser
 from api.authorization import (
+    project_id_for_subproject,
     require_knowledge_node,
     require_subproject,
     require_ticket,
@@ -97,6 +98,7 @@ async def update_ticket(
     user: CurrentUser,
 ) -> Ticket:
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -171,6 +173,7 @@ async def update_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -191,6 +194,7 @@ async def delete_ticket(
 ) -> None:
     """Delete a ticket and cascade its comments, audit logs, and dependency edges."""
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     subproject_id = ticket.subproject_id
     workspace_id = workspace_id_for_ticket(session, ticket_id)
     delete_ticket_dependencies(session, [ticket_id])
@@ -203,6 +207,7 @@ async def delete_ticket(
             entity="ticket",
             entity_id=ticket_id,
             parent_id=subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id,
         )
     )
@@ -227,6 +232,7 @@ async def attach_mr_link(
     is provided later, this route can grow a branch-creation side-effect.
     """
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     actor = _infer_actor(request)
 
     ticket.mr_link = payload.url
@@ -249,6 +255,7 @@ async def attach_mr_link(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -328,6 +335,7 @@ async def claim_ticket(
     from api.utils.time import utcnow
 
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     now = utcnow().replace(microsecond=0)
     if not _claim_ticket_atomic(session, ticket_id, payload.worker_id, now):
         session.rollback()
@@ -355,6 +363,7 @@ async def claim_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -379,6 +388,7 @@ async def heartbeat_ticket(
     from api.utils.time import utcnow
 
     ticket = require_ticket(session, user, ticket_id, write=True)
+    project_id = project_id_for_subproject(session, ticket.subproject_id)
     now = utcnow().replace(microsecond=0)
     heartbeat = session.execute(
         update(Ticket)
@@ -406,6 +416,7 @@ async def heartbeat_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            project_id=project_id,
             workspace_id=workspace_id_for_ticket(
                 session,
                 ticket.id,  # type: ignore[arg-type]
@@ -429,7 +440,8 @@ async def requeue_expired(
     """
     from api.utils.time import utcnow
 
-    require_subproject(session, user, subproject_id, write=True)
+    subproject = require_subproject(session, user, subproject_id, write=True)
+    project_id = subproject.project_id
     workspace_id = workspace_id_for_subproject(session, subproject_id)
     now = utcnow()
     candidate_ids = list(
@@ -480,6 +492,7 @@ async def requeue_expired(
                 entity="ticket",
                 entity_id=ticket_id,
                 parent_id=subproject_id,
+                project_id=project_id,
                 workspace_id=workspace_id,
             )
         )

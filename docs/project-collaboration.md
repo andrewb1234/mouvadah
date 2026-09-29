@@ -1,14 +1,14 @@
 # Project collaboration across independent workspaces
 
-Implementation scope approved by the user on 2026-09-29. Visual direction requires separate user confirmation before UI implementation proceeds.
+Implementation scope approved by the user on 2026-09-29. The user selected option 3 and approved the rendered desktop/mobile People page on 2026-09-29.
 
 ## Implementation checkpoint — September 29, 2026
 
-The approved direction is option 3: a dedicated project People page. Backend checkpoint `fb92ee8` implements project-only membership and invitations, explicit project credentials and hosted OAuth consent, capability-aware APIs, participant attribution, targeted realtime invalidation, and lifecycle/export support. The frontend is implemented for local visual review; production remains on `56c8514` until the rendered UI is confirmed.
+The approved direction is option 3: a dedicated project People page. Backend checkpoint `fb92ee8` implements project-only membership and invitations, explicit project credentials and hosted OAuth consent, capability-aware APIs, participant attribution, targeted realtime invalidation, and lifecycle/export support. The frontend is implemented and its rendered desktop/mobile visuals are approved; production remains on `56c8514` until final CI and production backup checks pass.
 
 Verification: 232 backend tests passed (PostgreSQL tests run separately); 33 focused security/lifecycle tests passed including all 11 PostgreSQL tests, concurrent invitation acceptance, queued-write revocation, legacy-key backfill, and encrypted backup/restore. All 38 browser tests passed; the finish review then identified draft loss on tab focus, denied-read retention, and small mobile tab labels. Fixes passed seven focused browser scenarios, including two-account sharing and one-time-link preservation. Production build passes.
 
-The additive backend and frontend will ship together after visual approval because the OAuth consent change is itself UI. This avoids an unreviewed intermediate production interface. Git checkpoints remain separate. Final CI, production backup evidence, release identity, and post-deployment smoke verification are still required. The remaining sections retain the original analysis for rationale; their baseline findings describe the code before implementation.
+The additive backend and frontend will ship together because the OAuth consent change is itself UI. This avoids an unreviewed intermediate production interface. Git checkpoints remain separate. Final CI, production backup evidence, release identity, and post-deployment smoke verification are still required. The remaining sections retain the original analysis for rationale; their baseline findings describe the code before implementation.
 
 ## Release manifest
 
@@ -18,7 +18,7 @@ The additive backend and frontend will ship together after visual approval becau
 - Branch: `codex/project-collaboration`. Preserve unrelated untracked workspace files.
 - Authorized destination: Render `taskable`, service `srv-d91stg8js32c73a0vahg`, confirmed workspace `tea-d4mqscali9vc73f2nipg` (My Workspace), repository `andrewb1234/mouvadah` main. Auto-deploy is enabled; do not trigger duplicate deploys after merges.
 - Checkpoints: plan commit; backward-compatible backend milestone with verified migration/authorization/lifecycle and deployment; scoped agent milestone; visually approved UI and final end-to-end deployment. Combine backend and credential deployment if intermediate compatibility cannot be proven.
-- Visual checkpoint: three generated concepts shown in chat in order: centered Share dialog, right-side Project access panel, project People page. These are mockups, not implemented or deployed UI. Selection pending. Incumbent design tokens and brand components remain authoritative over incidental generated-image differences.
+- Visual checkpoint: three generated concepts shown in chat in order: centered Share dialog, right-side Project access panel, project People page. These are mockups, not implemented or deployed UI. Option 3 selected; implementation captures subsequently approved. Incumbent design tokens and brand components remain authoritative over incidental generated-image differences.
 - Acceptance: focused and full relevant tests, PostgreSQL migrations/concurrency, frontend checks, two-account authenticated desktop/mobile scenarios, independent UI finish review, required protected CI, exact deployed commit and health/smoke evidence. Request user confirmation of rendered UI before its release.
 - Rollback: additive schema and backward-compatible contracts; review credential resource-mode migration carefully because older code must not authenticate project-only guest keys. Verify rollback behavior before deploying any new credential mode. Never downgrade/delete live data as an automatic rollback.
 - Current evidence: source matches remote main `56c8514`; baseline 86 focused tests passed during research. No implementation or deployment claim yet.

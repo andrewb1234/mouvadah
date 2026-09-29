@@ -415,35 +415,6 @@ class EventBroadcaster:
 
     async def publish(self, event: Event) -> None:
         """Deliver locally, then emit a shared PostgreSQL invalidation."""
-        # Stamp project identity before transport; parent IDs survive individual
-        # child deletion. Whole-project deletion uses its own entity ID.
-        if event.project_id is None:
-            from dataclasses import replace
-            from sqlmodel import Session
-            from api import database
-            from api.models.entities import Subproject, Ticket
-
-            project_id = None
-            if event.entity == "project":
-                project_id = event.entity_id
-            elif event.entity in {
-                "subproject",
-                "knowledge_node",
-                "knowledge_proposal",
-                "agent_session",
-            }:
-                project_id = event.parent_id
-            elif event.entity in {"ticket", "comment"}:
-                with Session(database.engine) as session:
-                    parent_id = event.parent_id
-                    if event.entity == "comment":
-                        ticket = session.get(Ticket, parent_id)
-                        parent_id = ticket.subproject_id if ticket else None
-                    subproject = (
-                        session.get(Subproject, parent_id) if parent_id else None
-                    )
-                    project_id = subproject.project_id if subproject else None
-            event = replace(event, project_id=project_id)
         await self._deliver(event)
         record_realtime_event("local", "delivered")
         if self._transport is not None:

@@ -19,6 +19,29 @@ from api.routes.events import stream_events
 
 
 @pytest.mark.asyncio
+async def test_broadcaster_does_not_resolve_application_database(monkeypatch):
+    from api import database
+    from sqlmodel import create_engine
+
+    empty_engine = create_engine("sqlite:///:memory:")
+    monkeypatch.setattr(database, "engine", empty_engine)
+    broadcaster = EventBroadcaster()
+    event = Event(
+        action=SSEAction.TICKET_UPDATED,
+        entity="ticket",
+        entity_id=73,
+        parent_id=11,
+        workspace_id=5,
+    )
+    try:
+        async with broadcaster.subscribe() as queue:
+            await broadcaster.publish(event)
+            assert queue.get_nowait() == event
+    finally:
+        empty_engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_broadcaster_delivers_to_subscriber():
     reset_broadcaster()
     broadcaster = get_broadcaster()
@@ -137,6 +160,11 @@ def test_ticket_mutation_publishes_event(client, session):
         client.patch(
             f"/api/v1/tickets/{ticket['id']}", json={"status": "IN_PROGRESS"}
         )
+        client.post(
+            f"/api/v1/tickets/{ticket['id']}/comments",
+            json={"content": "Shared update", "author": "HUMAN"},
+        )
+        client.delete(f"/api/v1/tickets/{ticket['id']}")
     finally:
         broadcaster.publish = original_publish  # type: ignore[assignment]
 
@@ -145,3 +173,6 @@ def test_ticket_mutation_publishes_event(client, session):
     assert SSEAction.SUBPROJECT_CREATED in actions
     assert SSEAction.TICKET_CREATED in actions
     assert SSEAction.TICKET_UPDATED in actions
+    assert SSEAction.COMMENT_CREATED in actions
+    assert SSEAction.TICKET_DELETED in actions
+    assert all(event.project_id == project["id"] for event in captured)

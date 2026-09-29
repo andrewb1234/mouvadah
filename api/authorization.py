@@ -444,6 +444,16 @@ def workspace_id_for_project(session: Session, project_id: int) -> int:
     return workspace_id
 
 
+def project_id_for_subproject(session: Session, subproject_id: int) -> int:
+    """Resolve the project using the caller's already-authorized transaction."""
+    project_id = session.exec(
+        select(Subproject.project_id).where(Subproject.id == subproject_id)
+    ).first()
+    if project_id is None:
+        raise RuntimeError(f"Subproject {subproject_id} has no project ownership.")
+    return project_id
+
+
 def workspace_id_for_subproject(session: Session, subproject_id: int) -> int:
     """Resolve the workspace for an already-authorized subproject."""
     workspace_id = session.exec(

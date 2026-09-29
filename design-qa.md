@@ -22,6 +22,6 @@ Post-fix mobile capture confirms all view names are legible and contained. Deskt
 - Browser test fixture rejects unexpected console errors; the final focused run passed. A temporary Vite HMR context error during development was resolved by a fresh navigation and did not reproduce in the final tests.
 - Production frontend build passes.
 
-User confirmation of the rendered visuals remains a separate release gate; visual QA does not substitute for that confirmation.
+User approved the rendered desktop and mobile visuals on 2026-09-29. Pending invitations show email only; the accepted collaborator name comes from the authenticated profile, never inference from an email address. Jordan Lee in the screenshots is a synthetic accepted account.
 
 Final result: passed
