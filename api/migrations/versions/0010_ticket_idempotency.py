@@ -3,8 +3,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0009_ticket_idempotency"
-down_revision = "0008_hosted_mcp_oauth"
+revision = "0010_ticket_idempotency"
+down_revision = "0009_project_collaboration"
 branch_labels = None
 depends_on = None
 

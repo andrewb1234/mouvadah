@@ -83,7 +83,13 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
 
 7. **`create_ticket(subproject_id: int, title: str, description: str, assignee: str) -> str`**
    * **Retry safety:** Optional `client_ref` (1–128 characters) identifies one
-     logical create request within the subproject. Reuse the same payload/key
+     logical create request within the subproject. The caller generates and
+     durably saves this key **before sending the first request**. It identifies
+     a creation intent, not successful creation; the server still assigns the
+     ticket ID. For example, persist `planning-run-42:item-7`, submit it, and
+     reuse it if the response is lost. After acknowledgement, use the returned
+     ticket ID for reads and updates. A new intentional ticket gets a new key.
+     Reuse the same payload/key
      after a timeout: HTTP 200 returns the existing ticket, including later
      human edits; a new ticket returns 201. A different creation payload for
      the same key returns 409. Dependency order is immaterial. Omit the key

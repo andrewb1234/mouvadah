@@ -13,6 +13,27 @@ from api.routes.subprojects import create_ticket
 from api.schemas import TicketCreate
 
 
+def test_shared_project_retry_rechecks_collaborator_write_access(multi_user_client, engine):
+    from api.models.entities import ProjectMembership
+    client, users = multi_user_client
+    sid = make_subproject(client)
+    with Session(engine) as session:
+        project_id = session.get(Subproject, sid).project_id
+        membership = ProjectMembership(project_id=project_id, user_id=users["bob"].id,
+            role="EDITOR", created_by_user_id=users["alice"].id)
+        session.add(membership); session.commit()
+    payload = {"title": "Shared creation", "client_ref": "persisted-intent"}
+    url = f"/api/v1/subprojects/{sid}/tickets"
+    first = client.post(url, json=payload, headers={"x-test-user": "bob"})
+    assert first.status_code == 201
+    retry = client.post(url, json=payload, headers={"x-test-user": "bob"})
+    assert retry.status_code == 200 and retry.json()["id"] == first.json()["id"]
+    with Session(engine) as session:
+        membership = session.exec(select(ProjectMembership).where(ProjectMembership.user_id == users["bob"].id)).one()
+        membership.role = "VIEWER"; session.add(membership); session.commit()
+    assert client.post(url, json=payload, headers={"x-test-user": "bob"}).status_code == 404
+
+
 def make_subproject(client):
     p = client.post('/api/v1/projects', json={'name': 'Retries'}).json()
     return client.post(f"/api/v1/projects/{p['id']}/subprojects", json={'name': 'Slice'}).json()['id']
