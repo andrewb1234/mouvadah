@@ -20,5 +20,5 @@ opentelemetry-sdk>=1.39,<2
 opentelemetry-exporter-otlp-proto-http>=1.39,<2
 
 # Hosted Streamable HTTP MCP and OAuth form parsing
-mcp==1.28.1
+mcp==1.30.0
 python-multipart>=0.0.22,<1
